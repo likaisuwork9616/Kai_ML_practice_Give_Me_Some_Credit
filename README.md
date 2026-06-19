@@ -38,35 +38,36 @@ ROC-AUC
 
 常見欄位包含：
 
-| 欄位名稱 | 說明 |
-|---|---|
-| SeriousDlqin2yrs | 是否在兩年內嚴重逾期，目標欄位 |
-| RevolvingUtilizationOfUnsecuredLines | 無擔保循環信用額度使用率 |
-| age | 年齡 |
-| NumberOfTime30-59DaysPastDueNotWorse | 30-59 天逾期次數 |
-| DebtRatio | 負債比率 |
-| MonthlyIncome | 月收入 |
-| NumberOfOpenCreditLinesAndLoans | 信用額度與貸款數量 |
-| NumberOfTimes90DaysLate | 90 天以上逾期次數 |
-| NumberRealEstateLoansOrLines | 房貸或不動產貸款數量 |
-| NumberOfTime60-89DaysPastDueNotWorse | 60-89 天逾期次數 |
-| NumberOfDependents | 家庭扶養人數 |
+| 欄位名稱                             | 說明                           |
+| ------------------------------------ | ------------------------------ |
+| SeriousDlqin2yrs                     | 是否在兩年內嚴重逾期，目標欄位 |
+| RevolvingUtilizationOfUnsecuredLines | 無擔保循環信用額度使用率       |
+| age                                  | 年齡                           |
+| NumberOfTime30-59DaysPastDueNotWorse | 30-59 天逾期次數               |
+| DebtRatio                            | 負債比率                       |
+| MonthlyIncome                        | 月收入                         |
+| NumberOfOpenCreditLinesAndLoans      | 信用額度與貸款數量             |
+| NumberOfTimes90DaysLate              | 90 天以上逾期次數              |
+| NumberRealEstateLoansOrLines         | 房貸或不動產貸款數量           |
+| NumberOfTime60-89DaysPastDueNotWorse | 60-89 天逾期次數               |
+| NumberOfDependents                   | 家庭扶養人數                   |
 
 ---
 
-
 ## 三、使用套件與安裝方式
 
-本專案目前使用到的 Python 套件如下：
+本專案使用 Python 進行資料處理、模型訓練與結果輸出。
 
-| 套件 | 用途 | 對應 import |
-|---|---|---|
-| pandas | 讀取 CSV、資料整理、建立 submission | `import pandas as pd` |
-| scikit-learn | 切分訓練/驗證集、缺失值補值、AUC 評估 | `train_test_split`, `SimpleImputer`, `roc_auc_score` |
-| xgboost | 建立 XGBoost 二元分類模型 | `from xgboost import XGBClassifier` |
-| matplotlib | 繪製圖表，例如 feature importance 或資料分布 | `import matplotlib.pyplot as plt` |
+### 主要套件版本
 
-可以使用以下指令安裝所需套件：
+| 套件         |   版本 | 用途                                         | 對應 import                                                |
+| ------------ | -----: | -------------------------------------------- | ---------------------------------------------------------- |
+| pandas       |  2.2.3 | 讀取 CSV、資料整理、建立 submission          | `import pandas as pd`                                    |
+| scikit-learn |  1.8.0 | 切分訓練/驗證集、缺失值補值、AUC 評估        | `train_test_split`, `SimpleImputer`, `roc_auc_score` |
+| xgboost      |  3.1.3 | 建立 XGBoost 二元分類模型                    | `from xgboost import XGBClassifier`                      |
+| matplotlib   | 3.10.8 | 繪製圖表，例如 feature importance 或資料分布 | `import matplotlib.pyplot as plt`                        |
+
+安裝方式：
 
 ```bash
 pip install -r requirements.txt
@@ -75,10 +76,10 @@ pip install -r requirements.txt
 `requirements.txt` 內容：
 
 ```txt
-pandas
-scikit-learn
-xgboost
-matplotlib
+pandas==2.2.3
+scikit-learn==1.8.0
+xgboost==3.1.3
+matplotlib==3.10.8
 ```
 
 目前主要 import 如下：
@@ -95,9 +96,48 @@ from xgboost import XGBClassifier
 import matplotlib.pyplot as plt
 ```
 
+如果需要確認自己電腦目前的套件版本，可以執行：
+
+```bash
+pip freeze
+```
+
+或在 Python / Notebook 中執行：
+
+```python
+import pandas as pd
+import sklearn
+import xgboost
+import matplotlib
+
+print("pandas:", pd.__version__)
+print("scikit-learn:", sklearn.__version__)
+print("xgboost:", xgboost.__version__)
+print("matplotlib:", matplotlib.__version__)
+```
+
 ---
 
-## 四、目前練習流程
+## 四、程式流程總覽
+
+本專案目前主要程式流程如下：
+
+1. 讀取 `cs-training.csv` 與 `cs-test.csv`
+2. 保留測試集 `Id`，作為最後 submission 使用
+3. 移除訓練集中 `NumberOfDependents` 為空值的資料列
+4. 建立特徵工程：`TotalLate`、`HasLate`
+5. 對 `RevolvingUtilizationOfUnsecuredLines` 進行 `clip()` 極端值處理
+6. 建立訓練資料 `X` 與目標欄位 `y`
+7. 使用 `train_test_split` 切分訓練集與驗證集
+8. 使用 `SimpleImputer(strategy="median")` 對其他缺失值做中位數補值
+9. 使用 `XGBClassifier` 訓練模型
+10. 使用 `roc_auc_score` 評估驗證集 AUC
+11. 對 Kaggle 測試集進行預測
+12. 輸出 `submission.csv` 並上傳 Kaggle
+
+---
+
+## 五、目前練習流程
 
 ### 1. 初始版本：未做詳細資料處理，直接使用 Random Forest
 
@@ -248,7 +288,7 @@ xgb = XGBClassifier(
 
 ---
 
-## 五、特徵工程實驗
+## 六、特徵工程實驗
 
 ### 1. 建立 TotalLate：總逾期次數
 
@@ -308,15 +348,15 @@ df["HasLate"] = (df["TotalLate"] > 0).astype(int)
 
 目前測試過的結果如下：
 
-| 實驗內容 | Private Score |
-|---|---:|
-| 原始特徵 + TotalLate + HasLate，沒有切片 | 0.86805 |
-| TotalLate + HasLate + `RevolvingUtilizationOfUnsecuredLines` clip upper=10 | 0.86808 |
-| TotalLate + HasLate + `RevolvingUtilizationOfUnsecuredLines` clip upper=5 | 0.86811 |
-| TotalLate + HasLate + `RevolvingUtilizationOfUnsecuredLines` clip upper=4 | 0.86814 |
-| TotalLate + HasLate + `RevolvingUtilizationOfUnsecuredLines` clip upper=3 | 0.86814 |
-| TotalLate + HasLate + `RevolvingUtilizationOfUnsecuredLines` clip upper=6 | 0.86814 |
-| TotalLate + HasLate + `RevolvingUtilizationOfUnsecuredLines` clip upper=2 | 0.86814 |
+| 實驗內容                                                                    | Private Score |
+| --------------------------------------------------------------------------- | ------------: |
+| 原始特徵 + TotalLate + HasLate，沒有切片                                    |       0.86805 |
+| TotalLate + HasLate +`RevolvingUtilizationOfUnsecuredLines` clip upper=10 |       0.86808 |
+| TotalLate + HasLate +`RevolvingUtilizationOfUnsecuredLines` clip upper=5  |       0.86811 |
+| TotalLate + HasLate +`RevolvingUtilizationOfUnsecuredLines` clip upper=4  |       0.86814 |
+| TotalLate + HasLate +`RevolvingUtilizationOfUnsecuredLines` clip upper=3  |       0.86814 |
+| TotalLate + HasLate +`RevolvingUtilizationOfUnsecuredLines` clip upper=6  |       0.86814 |
+| TotalLate + HasLate +`RevolvingUtilizationOfUnsecuredLines` clip upper=2  |       0.86814 |
 
 目前觀察：
 
@@ -324,7 +364,7 @@ df["HasLate"] = (df["TotalLate"] > 0).astype(int)
 
 ---
 
-## 六、RevolvingUtilizationOfUnsecuredLines 切片處理
+## 七、RevolvingUtilizationOfUnsecuredLines 切片處理
 
 `RevolvingUtilizationOfUnsecuredLines` 是一個很重要的欄位，但可能存在極端值。
 
@@ -367,7 +407,7 @@ Private Score 皆達到：
 
 ---
 
-## 七、目前最佳方向
+## 八、目前最佳方向
 
 目前表現較好的組合是：
 
@@ -386,7 +426,7 @@ Private Score 皆達到：
 
 ---
 
-## 八、目前主要程式流程
+## 九、主要程式碼流程
 
 簡化版流程如下：
 
@@ -527,7 +567,7 @@ submission.to_csv("submission.csv", index=False)
 
 ---
 
-## 九、學習心得
+## 十、學習心得
 
 這次練習讓我理解到，機器學習不是只靠一直調參數就能進步。
 
@@ -549,7 +589,7 @@ submission.to_csv("submission.csv", index=False)
 
 ---
 
-## 十、後續可改進方向
+## 十一、後續可改進方向
 
 之後可以繼續嘗試：
 
@@ -563,7 +603,7 @@ submission.to_csv("submission.csv", index=False)
 
 ---
 
-## 十一、目前最佳成績
+## 十二、目前最佳成績
 
 目前最佳 Kaggle Private Score：
 
@@ -579,7 +619,29 @@ XGBoost + TotalLate + HasLate + RevolvingUtilizationOfUnsecuredLines clip
 
 ---
 
-## 十一、建議專案結構
+## 十三、Kaggle 分數截圖證明
+
+Kaggle 分數截圖，因此本專案會將分數截圖放在 `images/` 資料夾中。
+
+建議檔案位置：
+
+```text
+images/kaggle_score.png
+```
+
+README 顯示方式：
+
+![Kaggle Score Screenshot](images/kaggle_score.png)
+
+目前實驗紀錄最佳 Private Score：
+
+```text
+0.86814
+```
+
+---
+
+## 十四、建議專案結構
 
 ```text
 give-me-credit-practice/
@@ -594,6 +656,6 @@ give-me-credit-practice/
 
 ---
 
-## 十二、專案狀態
+## 十五、專案狀態
 
 目前本專案仍在練習與實驗中，會持續記錄不同資料處理方式、特徵工程與模型調整對 Kaggle 分數的影響。

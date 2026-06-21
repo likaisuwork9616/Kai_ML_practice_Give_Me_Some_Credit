@@ -135,14 +135,16 @@ print("matplotlib:", matplotlib.__version__)
 4. 建立特徵工程：`TotalLate`、`HasLate`
 5. 對 `RevolvingUtilizationOfUnsecuredLines` 進行 `clip()` 極端值處理
 6. 新增收入與負債相關特徵：`MonthlyDebtPayment`、`PerCapitaIncome`
-7. 建立訓練資料 `X` 與目標欄位 `y`
-8. 使用 `StratifiedKFold` 進行 5-Fold 交叉驗證
-9. 每一折內部獨立使用 `SimpleImputer(strategy="median")` 進行中位數補值，避免 Data Leakage
-10. 每一折訓練一個 `XGBClassifier` 模型
-11. 使用 OOF 預測結果計算整體交叉驗證 AUC
-12. 對 Kaggle 測試集進行 5 次預測並取平均
-13. 使用 Feature Importance 觀察模型重視的欄位
-14. 輸出 `submission.csv` 並上傳 Kaggle
+7. 新增 `MonthlyIncome_isna`，記錄月收入是否原本為缺失值
+8. 對 `DebtRatio` 進行 `clip()` 極端值處理，最終採用 `upper=50`
+9. 建立訓練資料 `X` 與目標欄位 `y`
+10. 使用 `StratifiedKFold` 進行 5-Fold 交叉驗證
+11. 每一折內部獨立使用 `SimpleImputer(strategy="median")` 進行中位數補值，避免 Data Leakage
+12. 每一折訓練一個 `XGBClassifier` 模型
+13. 使用 OOF 預測結果計算整體交叉驗證 AUC
+14. 對 Kaggle 測試集進行 5 次預測並取平均
+15. 使用 Feature Importance 觀察模型重視的欄位
+16. 輸出 `submission.csv` 並上傳 Kaggle
 
 ---
 
@@ -367,13 +369,21 @@ df["HasLate"] = (df["TotalLate"] > 0).astype(int)
 | TotalLate + HasLate + `RevolvingUtilizationOfUnsecuredLines` clip upper=6 | 單一 train/valid split | 0.86814 |
 | TotalLate + HasLate + `RevolvingUtilizationOfUnsecuredLines` clip upper=2 | 單一 train/valid split | 0.86814 |
 | 原本最佳特徵 + 5-Fold | 5-Fold CV + 平均測試集預測 | 0.86833 |
-| 原本最佳特徵 + `MonthlyDebtPayment` + `PerCapitaIncome` + 5-Fold | 5-Fold CV + 平均測試集預測 | **0.86834** |
+| 原本最佳特徵 + `MonthlyDebtPayment` + `PerCapitaIncome` + 5-Fold | 5-Fold CV + 平均測試集預測 | 0.86834 |
+| 上一版最佳 + `MonthlyIncome_isna` | 5-Fold CV + 平均測試集預測 | 0.86837 |
+| 上一版最佳 + `AgeBin` | 5-Fold CV + 平均測試集預測 | 0.86835 |
+| 上一版最佳 + `LateSeverity` | 5-Fold CV + 平均測試集預測 | 0.86815 |
+| 上一版最佳 + `DebtRatio` clip upper=1 | 5-Fold CV + 平均測試集預測 | 0.86831 |
+| 上一版最佳 + `DebtRatio` clip upper=2 | 5-Fold CV + 平均測試集預測 | 0.86842 |
+| 上一版最佳 + `DebtRatio` clip upper=5 | 5-Fold CV + 平均測試集預測 | 0.86841 |
+| 上一版最佳 + `DebtRatio` clip upper=10 | 5-Fold CV + 平均測試集預測 | 0.86838 |
+| 上一版最佳 + `DebtRatio` clip upper=50 | 5-Fold CV + 平均測試集預測 | **0.86843** |
 
 目前觀察：
 
 > 對 `RevolvingUtilizationOfUnsecuredLines` 做切片後，Private Score 有小幅提升。
 > 後續改用 5-Fold 交叉驗證後，分數由原本最佳的 `0.86814` 提升到 `0.86833`。
-> 在 5-Fold 基礎上再加入 `MonthlyDebtPayment` 與 `PerCapitaIncome`，Private Score 小幅提升到 `0.86834`，因此目前將此版本作為新的最佳版本。
+> 在 5-Fold 基礎上再加入 `MonthlyDebtPayment` 與 `PerCapitaIncome`，Private Score 小幅提升到 `0.86834`。後續重新測試先前未採用的特徵後，發現 `DebtRatio` clip upper=50 表現最好，Private Score 達到 `0.86843`，因此目前將此版本作為新的最佳版本。
 
 ### 4. 特徵工程對 Feature Importance 的影響
 
@@ -386,6 +396,10 @@ df["HasLate"] = (df["TotalLate"] > 0).astype(int)
 | `TotalLate`                                 | 將 30-59 天、60-89 天、90 天以上逾期次數加總 | 讓模型直接看到整體逾期程度     |
 | `HasLate`                                   | 判斷 `TotalLate > 0`                       | 讓模型快速判斷客戶是否曾經逾期 |
 | `RevolvingUtilizationOfUnsecuredLines` clip | 將極端值限制在指定上限                       | 降低極端值對模型切分的干擾     |
+| `MonthlyDebtPayment`                       | `DebtRatio * MonthlyIncome`                 | 估算每月負債壓力               |
+| `PerCapitaIncome`                          | `MonthlyIncome / (NumberOfDependents + 1)`  | 估算家庭平均收入壓力           |
+| `MonthlyIncome_isna`                       | 判斷 `MonthlyIncome` 是否缺失                | 保留收入缺失本身的訊號         |
+| `DebtRatio` clip                           | 將 `DebtRatio` 極端值限制在 upper=50         | 降低負債比極端值對模型干擾     |
 
 這些特徵工程的目的不是單純增加欄位數量，而是把原本分散或極端的資訊整理成更容易被模型使用的形式。
 
@@ -398,32 +412,42 @@ df["HasLate"] = (df["TotalLate"] > 0).astype(int)
 
 不過 Feature Importance 只能代表模型使用欄位的相對頻率或貢獻，不能完全代表因果關係。因此本專案仍以 Kaggle Private Score 作為最終採用依據。
 
-### 5. 收入與負債相關特徵實驗：5-Fold 後小幅採用
+### 5. 收入、負債與缺失值特徵實驗：5-Fold 後重新測試
 
 本次也嘗試建立收入與負債相關的新特徵。早期曾一次加入較多收入與負債特徵，但在單一 train/valid split 版本中，Kaggle Private Score 沒有明顯提升，因此當時暫不採用。
 
-後續改成 5-Fold 交叉驗證後，重新保守測試其中兩個較直觀的特徵：
+後續改成 5-Fold 交叉驗證後，重新保守測試其中幾個較直觀的特徵：
 
 | 新增特徵 | 建立方式 | 說明 |
 | -------- | -------- | ---- |
 | `MonthlyDebtPayment` | `DebtRatio * MonthlyIncome` | 粗略估計每月負債壓力 |
 | `PerCapitaIncome` | `MonthlyIncome / (NumberOfDependents + 1)` | 估計平均到每位家庭成員後的月收入 |
+| `MonthlyIncome_isna` | `MonthlyIncome.isna()` | 記錄月收入是否原本為缺失值 |
+| `DebtRatio` clip | `DebtRatio.clip(upper=50)` | 降低負債比極端值影響 |
 
 實驗結果如下：
 
-| 實驗內容 | Private Score |
-| -------- | ------------: |
-| 原本最佳特徵 + 5-Fold | 0.86833 |
-| 原本最佳特徵 + `MonthlyDebtPayment` + `PerCapitaIncome` + 5-Fold | **0.86834** |
+| 實驗內容 | Private Score | 是否採用 |
+| -------- | ------------: | -------- |
+| 原本最佳特徵 + 5-Fold | 0.86833 | 參考 |
+| 原本最佳特徵 + `MonthlyDebtPayment` + `PerCapitaIncome` + 5-Fold | 0.86834 | 採用 |
+| 上一版最佳 + `MonthlyIncome_isna` | 0.86837 | 採用 |
+| 上一版最佳 + `AgeBin` | 0.86835 | 不採用 |
+| 上一版最佳 + `LateSeverity` | 0.86815 | 不採用 |
+| 上一版最佳 + `DebtRatio` clip upper=1 | 0.86831 | 不採用 |
+| 上一版最佳 + `DebtRatio` clip upper=2 | 0.86842 | 可參考 |
+| 上一版最佳 + `DebtRatio` clip upper=5 | 0.86841 | 可參考 |
+| 上一版最佳 + `DebtRatio` clip upper=10 | 0.86838 | 不採用 |
+| 上一版最佳 + `DebtRatio` clip upper=50 | **0.86843** | 採用 |
 
 因此本專案目前判斷：
 
-> `MonthlyDebtPayment` 與 `PerCapitaIncome` 在 5-Fold 版本中帶來非常小幅的提升，因此目前可作為最終版本的一部分。
+> `MonthlyDebtPayment`、`PerCapitaIncome`、`MonthlyIncome_isna` 在 5-Fold 版本中都有小幅提升；而 `DebtRatio` clip 測試中，`upper=50` 的 Private Score 最高，達到 `0.86843`，因此目前作為最終版本的一部分。
 
 這次實驗也說明：
 
 > 特徵工程是否有效，不能只看單一 train/valid split，也需要搭配更穩定的驗證方式，例如 5-Fold 交叉驗證。  
-> 不過本次提升幅度非常小，代表這兩個特徵的幫助有限，主要提升仍來自 5-Fold 平均預測帶來的穩定性。
+> 不過本次每個特徵的提升幅度都很小，因此仍需要一個一個測試，避免一次加入太多欄位造成雜訊。
 
 ---
 
@@ -483,17 +507,19 @@ Private Score 皆達到：
 7. 使用 5-Fold 交叉驗證訓練 5 個模型
 8. 對 Kaggle 測試集做 5 次預測並取平均
 9. 加入 `MonthlyDebtPayment` 與 `PerCapitaIncome` 兩個收入與負債相關特徵
+10. 加入 `MonthlyIncome_isna` 缺失值指示特徵
+11. 對 `DebtRatio` 做上限切片，最終採用 `upper=50`
 
 目前最佳 Private Score：
 
 ```python
-0.86834
+0.86843
 ```
 
 目前最佳版本：
 
 ```text
-XGBoost + TotalLate + HasLate + RevolvingUtilizationOfUnsecuredLines clip + MonthlyDebtPayment + PerCapitaIncome + 5-Fold
+XGBoost + TotalLate + HasLate + RevolvingUtilizationOfUnsecuredLines clip + MonthlyDebtPayment + PerCapitaIncome + MonthlyIncome_isna + DebtRatio clip upper=50 + 5-Fold
 ```
 
 ---
@@ -535,7 +561,7 @@ df_train = df_train.dropna(subset=["SeriousDlqin2yrs"])
 ### 4. 建立特徵工程
 
 ```python
-def add_features(df, upper=3):
+def add_features(df, upper=3, debt_upper=50):
     df = df.copy()
 
     # RevolvingUtilization 極端值切片
@@ -554,6 +580,13 @@ def add_features(df, upper=3):
     # 是否曾經逾期
     df["HasLate"] = (df["TotalLate"] > 0).astype(int)
 
+    # 記錄 MonthlyIncome 是否原本為缺失值
+    df["MonthlyIncome_isna"] = df["MonthlyIncome"].isna().astype(int)
+
+    # 保留原始 DebtRatio，並對 DebtRatio 做極端值切片
+    df["DebtRatio_original"] = df["DebtRatio"]
+    df["DebtRatio"] = df["DebtRatio"].clip(upper=debt_upper)
+
     # 估算每月負債壓力
     df["MonthlyDebtPayment"] = df["DebtRatio"] * df["MonthlyIncome"]
 
@@ -564,8 +597,8 @@ def add_features(df, upper=3):
 ```
 
 ```python
-df_train = add_features(df_train, upper=3)
-df_test = add_features(df_test, upper=3)
+df_train = add_features(df_train, upper=3, debt_upper=50)
+df_test = add_features(df_test, upper=3, debt_upper=50)
 ```
 
 ### 5. 建立 X / y
@@ -702,6 +735,8 @@ plt.show()
 3. 對 `RevolvingUtilizationOfUnsecuredLines` 做極端值切片
 4. 使用 5-Fold 交叉驗證提升模型穩定性
 5. 新增 `MonthlyDebtPayment` 與 `PerCapitaIncome`，並在 5-Fold 版本中取得小幅提升
+6. 重新測試 `MonthlyIncome_isna`、`AgeBin`、`LateSeverity` 與 `DebtRatio` clip
+7. 最終採用 `MonthlyIncome_isna` 與 `DebtRatio` clip upper=50
 
 之後可以繼續嘗試：
 
@@ -718,13 +753,13 @@ plt.show()
 目前最佳 Kaggle Private Score：
 
 ```python
-0.86834
+0.86843
 ```
 
 目前使用方法：
 
 ```python
-XGBoost + TotalLate + HasLate + RevolvingUtilizationOfUnsecuredLines clip + MonthlyDebtPayment + PerCapitaIncome + 5-Fold
+XGBoost + TotalLate + HasLate + RevolvingUtilizationOfUnsecuredLines clip + MonthlyDebtPayment + PerCapitaIncome + MonthlyIncome_isna + DebtRatio clip upper=50 + 5-Fold
 ```
 
 本次分數提升紀錄：
@@ -733,7 +768,11 @@ XGBoost + TotalLate + HasLate + RevolvingUtilizationOfUnsecuredLines clip + Mont
 | ---- | ------------: |
 | 原本最佳特徵 + 單一 train/valid split | 0.86814 |
 | 原本最佳特徵 + 5-Fold | 0.86833 |
-| 原本最佳特徵 + `MonthlyDebtPayment` + `PerCapitaIncome` + 5-Fold | **0.86834** |
+| 原本最佳特徵 + `MonthlyDebtPayment` + `PerCapitaIncome` + 5-Fold | 0.86834 |
+| 上一版最佳 + `MonthlyIncome_isna` | 0.86837 |
+| 上一版最佳 + `DebtRatio` clip upper=2 | 0.86842 |
+| 上一版最佳 + `DebtRatio` clip upper=5 | 0.86841 |
+| 上一版最佳 + `DebtRatio` clip upper=50 | **0.86843** |
 
 ---
 
@@ -754,7 +793,7 @@ images/kaggle_score.png
 目前實驗紀錄最佳 Private Score：
 
 ```text
-0.86834
+0.86843
 ```
 
 ### 2. Feature Importance 特徵重要性圖
@@ -769,7 +808,7 @@ images/feature_importance.png
 
 這張圖用來觀察 XGBoost 模型在訓練後，較重視哪些欄位。透過這張圖可以檢查特徵工程是否有被模型使用，例如 `TotalLate`、`HasLate` 或經過 `clip()` 處理後的欄位是否具有一定的重要性。
 
-本次收入與負債相關特徵在單一 train/valid split 版本中沒有明顯提升，但改用 5-Fold 後，`MonthlyDebtPayment` 與 `PerCapitaIncome` 讓 Private Score 從 `0.86833` 小幅提升到 `0.86834`，因此目前納入最終採用版本。
+本次收入與負債相關特徵在單一 train/valid split 版本中沒有明顯提升，但改用 5-Fold 後，`MonthlyDebtPayment`、`PerCapitaIncome`、`MonthlyIncome_isna` 與 `DebtRatio` clip upper=50 讓 Private Score 逐步提升到 `0.86843`，因此目前納入最終採用版本。
 
 ---
 

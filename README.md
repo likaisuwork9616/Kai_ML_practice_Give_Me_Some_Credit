@@ -359,10 +359,12 @@ df["HasLate"] = (df["TotalLate"] > 0).astype(int)
 | TotalLate + HasLate +`RevolvingUtilizationOfUnsecuredLines` clip upper=3  |       0.86814 |
 | TotalLate + HasLate +`RevolvingUtilizationOfUnsecuredLines` clip upper=6  |       0.86814 |
 | TotalLate + HasLate +`RevolvingUtilizationOfUnsecuredLines` clip upper=2  |       0.86814 |
+| TotalLate + HasLate + clip + 收入與負債相關新特徵 | 低於 0.86814，未採用 |
 
 目前觀察：
 
 > 對 `RevolvingUtilizationOfUnsecuredLines` 做切片後，Private Score 有小幅提升。
+> 但額外加入收入與負債相關新特徵後，Kaggle 分數反而下降，因此目前不採用這組新特徵。
 
 ### 4. 特徵工程對 Feature Importance 的影響
 
@@ -387,13 +389,28 @@ df["HasLate"] = (df["TotalLate"] > 0).astype(int)
 
 不過 Feature Importance 只能代表模型使用欄位的相對頻率或貢獻，不能完全代表因果關係。因此本專案仍以 Kaggle Private Score 作為最終採用依據。
 
-特徵重要性圖存放位置：
+### 5. 收入與負債相關特徵實驗：未採用
 
-```text
-images/feature_importance.png
-```
+本次也嘗試建立收入與負債相關的新特徵，例如：
 
-![Feature Importance](images/feature_importance.png)
+| 新增特徵 | 說明 |
+| -------- | ---- |
+| `MonthlyIncome_log` | 對月收入取 log，降低極端高收入影響 |
+| `DebtRatio_log` | 對負債比取 log，降低極端負債比影響 |
+| `IncomePerDependent` | 平均每位家庭成員可分配收入 |
+| `DebtPerDependent` | 平均每位家庭成員負債壓力 |
+| `EstimatedMonthlyDebt` | 以 `DebtRatio * MonthlyIncome` 粗略估計每月負債 |
+| `DebtToIncomeFeature` | 建立負債與收入的交互比例 |
+
+雖然這些特徵在 Feature Importance 圖中有被模型使用，例如 `EstimatedMonthlyDebt`、`DebtToIncomeFeature`、`DebtRatio_log` 等欄位仍有一定重要性，但實際提交 Kaggle 後，Private Score 低於目前最佳的 `0.86814`。
+
+因此本專案目前判斷：
+
+> 收入與負債相關新特徵雖然有被模型使用，但沒有帶來更好的 Kaggle 分數，因此最終版本先不採用。
+
+這次實驗也說明：
+
+> Feature Importance 高不一定代表分數會提升，最終仍要以驗證分數與 Kaggle Private Score 作為判斷依據。
 
 ---
 
@@ -450,6 +467,8 @@ Private Score 皆達到：
 4. 建立 `TotalLate`
 5. 建立 `HasLate`
 6. 對 `RevolvingUtilizationOfUnsecuredLines` 做上限切片
+
+另外測試過收入與負債相關的新特徵，但分數反而低於目前最佳結果，因此最終版本暫不採用。
 
 目前最佳 Private Score：
 
@@ -650,13 +669,14 @@ submission.to_csv("submission.csv", index=False)
 
 ## 十一、後續可改進方向
 
+目前已嘗試建立收入與負債相關的新特徵，但分數沒有提升，因此暫不採用。
+
 之後可以繼續嘗試：
 
-1. 建立收入與負債相關的新特徵
-3. 使用交叉驗證讓分數更穩定
-4. 嘗試 LightGBM 或 CatBoost
-5. 比較不同 `clip()` 上限對 Public / Private Score 的影響
-6. 使用 feature importance 分析模型重視的欄位
+1. 使用交叉驗證讓分數更穩定
+2. 嘗試 LightGBM 或 CatBoost
+3. 比較不同 `clip()` 上限對 Public / Private Score 的影響
+4. 針對高重要性的逾期相關欄位做更細緻的特徵工程
 
 ---
 
@@ -704,11 +724,11 @@ images/kaggle_score.png
 images/feature_importance.png
 ```
 
-README 顯示方式：
-
 ![Feature Importance](images/feature_importance.png)
 
 這張圖用來觀察 XGBoost 模型在訓練後，較重視哪些欄位。透過這張圖可以檢查特徵工程是否有被模型使用，例如 `TotalLate`、`HasLate` 或經過 `clip()` 處理後的欄位是否具有一定的重要性。
+
+本次收入與負債相關特徵雖然也有出現在 Feature Importance 中，但 Kaggle 分數反而下降，因此這組特徵目前只作為實驗紀錄，不放入最終採用版本。
 
 ---
 

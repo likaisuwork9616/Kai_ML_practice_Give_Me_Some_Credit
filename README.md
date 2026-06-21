@@ -652,13 +652,11 @@ submission.to_csv("submission.csv", index=False)
 
 之後可以繼續嘗試：
 
-1. 對 `MonthlyIncome` 做更細緻的缺失值處理
-2. 嘗試 `DebtRatio` 的極端值切片
-3. 建立收入與負債相關的新特徵
-4. 使用交叉驗證讓分數更穩定
-5. 嘗試 LightGBM 或 CatBoost
-6. 比較不同 `clip()` 上限對 Public / Private Score 的影響
-7. 使用 feature importance 分析模型重視的欄位
+1. 建立收入與負債相關的新特徵
+3. 使用交叉驗證讓分數更穩定
+4. 嘗試 LightGBM 或 CatBoost
+5. 比較不同 `clip()` 上限對 Public / Private Score 的影響
+6. 使用 feature importance 分析模型重視的欄位
 
 ---
 

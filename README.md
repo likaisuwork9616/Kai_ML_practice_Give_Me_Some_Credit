@@ -424,6 +424,8 @@ Private Score 皆達到：
 0.86814
 ```
 
+後續雖然有測試 `MonthlyIncome` 更細緻缺失值處理與 `DebtRatio` 極端值切片，但分數沒有明顯提升，因此目前最終版本仍以此組合為主。
+
 ---
 
 ## 九、主要程式碼流程
@@ -589,21 +591,71 @@ submission.to_csv("submission.csv", index=False)
 
 ---
 
-## 十一、後續可改進方向
+## 十一、已完成但未採用的實驗
 
-之後可以繼續嘗試：
+除了目前最佳版本外，也額外嘗試了以下兩個方向。
 
-1. 對 `MonthlyIncome` 做更細緻的缺失值處理
-2. 嘗試 `DebtRatio` 的極端值切片
-3. 建立收入與負債相關的新特徵
-4. 使用交叉驗證讓分數更穩定
-5. 嘗試 LightGBM 或 CatBoost
-6. 比較不同 `clip()` 上限對 Public / Private Score 的影響
-7. 使用 feature importance 分析模型重視的欄位
+### 1. 對 `MonthlyIncome` 做更細緻的缺失值處理
+
+原本的處理方式是使用：
+
+```python
+SimpleImputer(strategy="median")
+```
+
+後續曾嘗試更細緻的處理方式，例如：
+
+- 建立 `MonthlyIncomeMissing`，記錄月收入是否原本為缺失值
+- 嘗試依照年齡區間、扶養人數區間等方式，對 `MonthlyIncome` 做分組中位數補值
+
+實驗結果：
+
+> Kaggle Private Score 沒有明顯提升，因此最終版本不採用此方法。
+
+目前仍保留原本較穩定的中位數補值方式。
 
 ---
 
-## 十二、目前最佳成績
+### 2. 嘗試 `DebtRatio` 的極端值切片
+
+`DebtRatio` 也可能存在極端值，因此曾嘗試使用 `clip()` 限制上限。
+
+測試過的上限包含：
+
+```python
+debt_upper = 1
+debt_upper = 2
+debt_upper = 5
+debt_upper = 10
+debt_upper = 50
+debt_upper = 100
+```
+
+實驗結果皆為：
+
+```text
+Private Score: 0.86814
+```
+
+因此判斷：
+
+> `DebtRatio` 做極端值切片後，分數沒有明顯上升，因此最終版本暫不採用。
+
+---
+
+## 十二、後續可改進方向
+
+之後可以繼續嘗試：
+
+1. 建立收入與負債相關的新特徵
+2. 使用交叉驗證讓分數更穩定
+3. 嘗試 LightGBM 或 CatBoost
+4. 比較不同 `clip()` 上限對 Public / Private Score 的影響
+5. 使用 feature importance 分析模型重視的欄位
+
+---
+
+## 十三、目前最佳成績
 
 目前最佳 Kaggle Private Score：
 
@@ -619,7 +671,7 @@ XGBoost + TotalLate + HasLate + RevolvingUtilizationOfUnsecuredLines clip
 
 ---
 
-## 十三、Kaggle 分數截圖證明
+## 十四、Kaggle 分數截圖證明
 
 Kaggle 分數截圖，因此本專案會將分數截圖放在 `images/` 資料夾中。
 
@@ -641,7 +693,7 @@ README 顯示方式：
 
 ---
 
-## 十四、建議專案結構
+## 十五、建議專案結構
 
 ```text
 give-me-credit-practice/
@@ -656,6 +708,6 @@ give-me-credit-practice/
 
 ---
 
-## 十五、專案狀態
+## 十六、專案狀態
 
 目前本專案仍在練習與實驗中，會持續記錄不同資料處理方式、特徵工程與模型調整對 Kaggle 分數的影響。

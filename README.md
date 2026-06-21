@@ -31,6 +31,7 @@ ROC-AUC
 7. 反覆實驗不同特徵對模型分數的影響
 8. 使用 Feature Importance 分析模型重視的欄位
 9. 使用 5-Fold 交叉驗證提升模型穩定性
+10. 比較 3-Fold、5-Fold、10-Fold 對 Kaggle 分數的影響
 
 ---
 
@@ -138,11 +139,11 @@ print("matplotlib:", matplotlib.__version__)
 7. 新增 `MonthlyIncome_isna`，記錄月收入是否原本為缺失值
 8. 對 `DebtRatio` 進行 `clip()` 極端值處理，最終採用 `upper=50`
 9. 建立訓練資料 `X` 與目標欄位 `y`
-10. 使用 `StratifiedKFold` 進行 5-Fold 交叉驗證
+10. 使用 `StratifiedKFold` 進行交叉驗證，主要採用 5-Fold，並額外比較 3-Fold、10-Fold
 11. 每一折內部獨立使用 `SimpleImputer(strategy="median")` 進行中位數補值，避免 Data Leakage
 12. 每一折訓練一個 `XGBClassifier` 模型
 13. 使用 OOF 預測結果計算整體交叉驗證 AUC
-14. 對 Kaggle 測試集進行 5 次預測並取平均
+14. 對 Kaggle 測試集進行多折預測並取平均，降低單一模型預測波動
 15. 使用 Feature Importance 觀察模型重視的欄位
 16. 輸出 `submission.csv` 並上傳 Kaggle
 
@@ -378,14 +379,39 @@ df["HasLate"] = (df["TotalLate"] > 0).astype(int)
 | 上一版最佳 + `DebtRatio` clip upper=5 | 5-Fold CV + 平均測試集預測 | 0.86841 |
 | 上一版最佳 + `DebtRatio` clip upper=10 | 5-Fold CV + 平均測試集預測 | 0.86838 |
 | 上一版最佳 + `DebtRatio` clip upper=50 | 5-Fold CV + 平均測試集預測 | **0.86843** |
+| 最佳特徵版本 + 3-Fold | 3-Fold CV + 平均測試集預測 | 0.86838 |
+| 最佳特徵版本 + 5-Fold | 5-Fold CV + 平均測試集預測 | 0.86839 |
+| 最佳特徵版本 + 10-Fold | 10-Fold CV + 平均測試集預測 | 0.86839 |
 
 目前觀察：
 
 > 對 `RevolvingUtilizationOfUnsecuredLines` 做切片後，Private Score 有小幅提升。
 > 後續改用 5-Fold 交叉驗證後，分數由原本最佳的 `0.86814` 提升到 `0.86833`。
-> 在 5-Fold 基礎上再加入 `MonthlyDebtPayment` 與 `PerCapitaIncome`，Private Score 小幅提升到 `0.86834`。後續重新測試先前未採用的特徵後，發現 `DebtRatio` clip upper=50 表現最好，Private Score 達到 `0.86843`，因此目前將此版本作為新的最佳版本。
+> 在 5-Fold 基礎上再加入 `MonthlyDebtPayment` 與 `PerCapitaIncome`，Private Score 小幅提升到 `0.86834`。後續重新測試先前未採用的特徵後，發現 `DebtRatio` clip upper=50 表現最好，Private Score 達到 `0.86843`，因此目前將此版本作為新的最佳版本。後續也測試 3-Fold、5-Fold、10-Fold，結果三者差距很小，表示目前模型在不同 Fold 數量下已相對穩定。
 
-### 4. 特徵工程對 Feature Importance 的影響
+### 4. 不同 Fold 數量實驗
+
+在完成 5-Fold 版本後，進一步固定目前最佳特徵工程與 XGBoost 參數，只改變 `StratifiedKFold` 的 `n_splits`，比較 3-Fold、5-Fold、10-Fold 對 Kaggle Private Score 的影響。
+
+本次測試結果如下：
+
+| Fold 數 | Private Score | 觀察 |
+| -------: | ------------: | ---- |
+| 3-Fold | 0.86838 | 訓練速度較快，但分數略低 |
+| 5-Fold | 0.86839 | 與 10-Fold 接近，訓練時間較合理 |
+| 10-Fold | 0.86839 | 分數沒有明顯高於 5-Fold，但訓練時間較長 |
+| 5-Fold 最佳紀錄 | **0.86843** | 目前歷史最佳 Private Score，仍來自 5-Fold 版本 |
+
+本次結果顯示，增加 Fold 數量不一定會讓 Kaggle Private Score 明顯提升。  
+3-Fold、5-Fold、10-Fold 的分數差距都非常小，代表目前模型已經相對穩定。
+
+雖然重新執行 5-Fold 時得到 `0.86839`，但先前相同 Fold 方向曾取得 `0.86843` 的最佳紀錄。這種差異可能來自模型訓練過程、隨機種子、提交檔案版本或特徵版本的微小差異。由於差距只有 `0.00004`，因此不視為明顯退步。
+
+綜合訓練時間、分數表現與穩定性，本專案仍選擇 **5-Fold** 作為主要版本。
+
+---
+
+### 5. 特徵工程對 Feature Importance 的影響
 
 在 XGBoost 這類樹模型中，Feature Importance 可以用來觀察模型在分裂節點時，較常使用哪些欄位來降低預測錯誤。
 
@@ -412,7 +438,7 @@ df["HasLate"] = (df["TotalLate"] > 0).astype(int)
 
 不過 Feature Importance 只能代表模型使用欄位的相對頻率或貢獻，不能完全代表因果關係。因此本專案仍以 Kaggle Private Score 作為最終採用依據。
 
-### 5. 收入、負債與缺失值特徵實驗：5-Fold 後重新測試
+### 6. 收入、負債與缺失值特徵實驗：5-Fold 後重新測試
 
 本次也嘗試建立收入與負債相關的新特徵。早期曾一次加入較多收入與負債特徵，但在單一 train/valid split 版本中，Kaggle Private Score 沒有明顯提升，因此當時暫不採用。
 
@@ -438,7 +464,10 @@ df["HasLate"] = (df["TotalLate"] > 0).astype(int)
 | 上一版最佳 + `DebtRatio` clip upper=2 | 0.86842 | 可參考 |
 | 上一版最佳 + `DebtRatio` clip upper=5 | 0.86841 | 可參考 |
 | 上一版最佳 + `DebtRatio` clip upper=10 | 0.86838 | 不採用 |
-| 上一版最佳 + `DebtRatio` clip upper=50 | **0.86843** | 採用 |
+| 上一版最佳 + `DebtRatio` clip upper=50 | **0.86843** |
+| 最佳特徵版本 + 3-Fold | 0.86838 |
+| 最佳特徵版本 + 5-Fold 重新測試 | 0.86839 |
+| 最佳特徵版本 + 10-Fold | 0.86839 | 採用 |
 
 因此本專案目前判斷：
 
@@ -723,6 +752,7 @@ plt.show()
 4. Kaggle 分數需要反覆提交與比較
 5. Private Score 才比較能看出模型泛化能力
 6. 5-Fold 交叉驗證可以讓模型預測更穩定，減少單一次切分造成的波動
+7. Fold 數量增加不一定會讓分數明顯提升，仍需要同時考量訓練時間與實際 Kaggle 分數
 
 ---
 
@@ -737,14 +767,15 @@ plt.show()
 5. 新增 `MonthlyDebtPayment` 與 `PerCapitaIncome`，並在 5-Fold 版本中取得小幅提升
 6. 重新測試 `MonthlyIncome_isna`、`AgeBin`、`LateSeverity` 與 `DebtRatio` clip
 7. 最終採用 `MonthlyIncome_isna` 與 `DebtRatio` clip upper=50
+8. 比較 3-Fold、5-Fold、10-Fold 對 Private Score 的影響
 
 之後可以繼續嘗試：
 
 1. 嘗試 LightGBM 或 CatBoost
-2. 比較不同 `clip()` 上限對 Public / Private Score 的影響
+2. 比較更多 `clip()` 上限對 Public / Private Score 的影響
 3. 針對高重要性的逾期相關欄位做更細緻的特徵工程
-4. 嘗試不同 Fold 數量，例如 3-Fold、5-Fold、10-Fold 的差異
-5. 比較單一模型與 5-Fold ensemble 在 Public / Private Score 上的穩定性
+4. 比較不同 random seed 對 5-Fold 結果的影響
+5. 比較 XGBoost 單模型與其他 Boosting 模型 ensemble 的穩定性
 
 ---
 
@@ -773,6 +804,9 @@ XGBoost + TotalLate + HasLate + RevolvingUtilizationOfUnsecuredLines clip + Mont
 | 上一版最佳 + `DebtRatio` clip upper=2 | 0.86842 |
 | 上一版最佳 + `DebtRatio` clip upper=5 | 0.86841 |
 | 上一版最佳 + `DebtRatio` clip upper=50 | **0.86843** |
+| 最佳特徵版本 + 3-Fold | 0.86838 |
+| 最佳特徵版本 + 5-Fold 重新測試 | 0.86839 |
+| 最佳特徵版本 + 10-Fold | 0.86839 |
 
 ---
 

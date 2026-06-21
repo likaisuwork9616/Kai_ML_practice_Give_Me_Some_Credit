@@ -29,6 +29,7 @@ ROC-AUC
 5. 特徵工程
 6. Kaggle Public / Private Score 比較
 7. 反覆實驗不同特徵對模型分數的影響
+8. 使用 Feature Importance 分析模型重視的欄位
 
 ---
 
@@ -132,8 +133,9 @@ print("matplotlib:", matplotlib.__version__)
 8. 使用 `SimpleImputer(strategy="median")` 對其他缺失值做中位數補值
 9. 使用 `XGBClassifier` 訓練模型
 10. 使用 `roc_auc_score` 評估驗證集 AUC
-11. 對 Kaggle 測試集進行預測
-12. 輸出 `submission.csv` 並上傳 Kaggle
+11. 使用 Feature Importance 觀察模型重視的欄位
+12. 對 Kaggle 測試集進行預測
+13. 輸出 `submission.csv` 並上傳 Kaggle
 
 ---
 
@@ -362,6 +364,39 @@ df["HasLate"] = (df["TotalLate"] > 0).astype(int)
 
 > 對 `RevolvingUtilizationOfUnsecuredLines` 做切片後，Private Score 有小幅提升。
 
+### 4. 特徵工程對 Feature Importance 的影響
+
+在 XGBoost 這類樹模型中，Feature Importance 可以用來觀察模型在分裂節點時，較常使用哪些欄位來降低預測錯誤。
+
+本專案新增的特徵工程欄位包含：
+
+| 特徵工程欄位 | 建立方式 | 目的 |
+| ------------ | -------- | ---- |
+| `TotalLate` | 將 30-59 天、60-89 天、90 天以上逾期次數加總 | 讓模型直接看到整體逾期程度 |
+| `HasLate` | 判斷 `TotalLate > 0` | 讓模型快速判斷客戶是否曾經逾期 |
+| `RevolvingUtilizationOfUnsecuredLines` clip | 將極端值限制在指定上限 | 降低極端值對模型切分的干擾 |
+
+這些特徵工程的目的不是單純增加欄位數量，而是把原本分散或極端的資訊整理成更容易被模型使用的形式。
+
+以 `TotalLate` 和 `HasLate` 為例，原始資料把不同逾期天數拆成三個欄位，但模型不一定能直接理解「整體逾期風險」。建立 `TotalLate` 後，可以把逾期次數整合成一個更直觀的風險指標；建立 `HasLate` 後，則讓模型更容易抓到「有無逾期紀錄」這個重要訊號。
+
+因此，如果特徵工程有效，可能會出現兩種結果：
+
+1. 新增的特徵本身進入 Feature Importance 前幾名
+2. 原本欄位的重要性下降，因為新特徵已經整理出更好用的資訊
+
+不過 Feature Importance 只能代表模型使用欄位的相對頻率或貢獻，不能完全代表因果關係。因此本專案仍以 Kaggle Private Score 作為最終採用依據。
+
+特徵重要性圖存放位置：
+
+```text
+images/feature_importance.png
+```
+
+README 顯示方式：
+
+![Feature Importance](images/feature_importance.png)
+
 ---
 
 ## 七、RevolvingUtilizationOfUnsecuredLines 切片處理
@@ -423,8 +458,6 @@ Private Score 皆達到：
 ```python
 0.86814
 ```
-
-後續雖然有測試 `MonthlyIncome` 更細緻缺失值處理與 `DebtRatio` 極端值切片，但分數沒有明顯提升，因此目前最終版本仍以此組合為主。
 
 ---
 
@@ -554,7 +587,33 @@ auc = roc_auc_score(y_valid, valid_pred)
 print("Validation AUC:", auc)
 ```
 
-### 10. 產生 Kaggle Submission
+### 10. 繪製 Feature Importance 圖
+
+```python
+import pandas as pd
+import matplotlib.pyplot as plt
+
+feature_importance = pd.DataFrame({
+    "feature": X.columns,
+    "importance": xgb.feature_importances_
+}).sort_values(by="importance", ascending=False)
+
+top_features = feature_importance.head(20)
+
+plt.figure(figsize=(10, 6))
+plt.barh(top_features["feature"], top_features["importance"])
+plt.gca().invert_yaxis()
+plt.xlabel("Importance")
+plt.ylabel("Feature")
+plt.title("Top 20 Feature Importance")
+plt.tight_layout()
+plt.savefig("images/feature_importance.png", dpi=300, bbox_inches="tight")
+plt.show()
+```
+
+> 注意：`plt.savefig()` 建議放在 `plt.show()` 前面，避免圖片存成空白。
+
+### 11. 產生 Kaggle Submission
 
 ```python
 test_pred = xgb.predict_proba(X_kaggle)[:, 1]
@@ -591,71 +650,21 @@ submission.to_csv("submission.csv", index=False)
 
 ---
 
-## 十一、已完成但未採用的實驗
-
-除了目前最佳版本外，也額外嘗試了以下兩個方向。
-
-### 1. 對 `MonthlyIncome` 做更細緻的缺失值處理
-
-原本的處理方式是使用：
-
-```python
-SimpleImputer(strategy="median")
-```
-
-後續曾嘗試更細緻的處理方式，例如：
-
-- 建立 `MonthlyIncomeMissing`，記錄月收入是否原本為缺失值
-- 嘗試依照年齡區間、扶養人數區間等方式，對 `MonthlyIncome` 做分組中位數補值
-
-實驗結果：
-
-> Kaggle Private Score 沒有明顯提升，因此最終版本不採用此方法。
-
-目前仍保留原本較穩定的中位數補值方式。
-
----
-
-### 2. 嘗試 `DebtRatio` 的極端值切片
-
-`DebtRatio` 也可能存在極端值，因此曾嘗試使用 `clip()` 限制上限。
-
-測試過的上限包含：
-
-```python
-debt_upper = 1
-debt_upper = 2
-debt_upper = 5
-debt_upper = 10
-debt_upper = 50
-debt_upper = 100
-```
-
-實驗結果皆為：
-
-```text
-Private Score: 0.86814
-```
-
-因此判斷：
-
-> `DebtRatio` 做極端值切片後，分數沒有明顯上升，因此最終版本暫不採用。
-
----
-
-## 十二、後續可改進方向
+## 十一、後續可改進方向
 
 之後可以繼續嘗試：
 
-1. 建立收入與負債相關的新特徵
-2. 使用交叉驗證讓分數更穩定
-3. 嘗試 LightGBM 或 CatBoost
-4. 比較不同 `clip()` 上限對 Public / Private Score 的影響
-5. 使用 feature importance 分析模型重視的欄位
+1. 對 `MonthlyIncome` 做更細緻的缺失值處理
+2. 嘗試 `DebtRatio` 的極端值切片
+3. 建立收入與負債相關的新特徵
+4. 使用交叉驗證讓分數更穩定
+5. 嘗試 LightGBM 或 CatBoost
+6. 比較不同 `clip()` 上限對 Public / Private Score 的影響
+7. 使用 feature importance 分析模型重視的欄位
 
 ---
 
-## 十三、目前最佳成績
+## 十二、目前最佳成績
 
 目前最佳 Kaggle Private Score：
 
@@ -671,11 +680,13 @@ XGBoost + TotalLate + HasLate + RevolvingUtilizationOfUnsecuredLines clip
 
 ---
 
-## 十四、Kaggle 分數截圖證明
+## 十三、圖片與結果證明
 
-Kaggle 分數截圖，因此本專案會將分數截圖放在 `images/` 資料夾中。
+本專案的圖片統一放在 `images/` 資料夾中，方便 GitHub README 直接顯示。
 
-建議檔案位置：
+### 1. Kaggle 分數截圖
+
+檔案位置：
 
 ```text
 images/kaggle_score.png
@@ -691,23 +702,41 @@ README 顯示方式：
 0.86814
 ```
 
+### 2. Feature Importance 特徵重要性圖
+
+檔案位置：
+
+```text
+images/feature_importance.png
+```
+
+README 顯示方式：
+
+![Feature Importance](images/feature_importance.png)
+
+這張圖用來觀察 XGBoost 模型在訓練後，較重視哪些欄位。透過這張圖可以檢查特徵工程是否有被模型使用，例如 `TotalLate`、`HasLate` 或經過 `clip()` 處理後的欄位是否具有一定的重要性。
+
 ---
 
-## 十五、建議專案結構
+## 十四、建議專案結構
 
 ```text
 give-me-credit-practice/
 │
 ├── README.md
+├── requirements.txt
+├── give_me_credit_xgboost.ipynb
 ├── cs-training.csv
 ├── cs-test.csv
 ├── submission.csv
-├── give_me_credit_xgboost.ipynb
-└── requirements.txt
+│
+└── images/
+    ├── kaggle_score.png
+    └── feature_importance.png
 ```
 
 ---
 
-## 十六、專案狀態
+## 十五、專案狀態
 
 目前本專案仍在練習與實驗中，會持續記錄不同資料處理方式、特徵工程與模型調整對 Kaggle 分數的影響。

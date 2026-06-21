@@ -370,11 +370,11 @@ df["HasLate"] = (df["TotalLate"] > 0).astype(int)
 
 本專案新增的特徵工程欄位包含：
 
-| 特徵工程欄位 | 建立方式 | 目的 |
-| ------------ | -------- | ---- |
-| `TotalLate` | 將 30-59 天、60-89 天、90 天以上逾期次數加總 | 讓模型直接看到整體逾期程度 |
-| `HasLate` | 判斷 `TotalLate > 0` | 讓模型快速判斷客戶是否曾經逾期 |
-| `RevolvingUtilizationOfUnsecuredLines` clip | 將極端值限制在指定上限 | 降低極端值對模型切分的干擾 |
+| 特徵工程欄位                                  | 建立方式                                     | 目的                           |
+| --------------------------------------------- | -------------------------------------------- | ------------------------------ |
+| `TotalLate`                                 | 將 30-59 天、60-89 天、90 天以上逾期次數加總 | 讓模型直接看到整體逾期程度     |
+| `HasLate`                                   | 判斷 `TotalLate > 0`                       | 讓模型快速判斷客戶是否曾經逾期 |
+| `RevolvingUtilizationOfUnsecuredLines` clip | 將極端值限制在指定上限                       | 降低極端值對模型切分的干擾     |
 
 這些特徵工程的目的不是單純增加欄位數量，而是把原本分散或極端的資訊整理成更容易被模型使用的形式。
 
@@ -392,8 +392,6 @@ df["HasLate"] = (df["TotalLate"] > 0).astype(int)
 ```text
 images/feature_importance.png
 ```
-
-README 顯示方式：
 
 ![Feature Importance](images/feature_importance.png)
 
@@ -691,8 +689,6 @@ XGBoost + TotalLate + HasLate + RevolvingUtilizationOfUnsecuredLines clip
 ```text
 images/kaggle_score.png
 ```
-
-README 顯示方式：
 
 ![Kaggle Score Screenshot](images/kaggle_score.png)
 

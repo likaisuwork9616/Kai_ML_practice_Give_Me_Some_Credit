@@ -30,6 +30,7 @@ ROC-AUC
 6. Kaggle Public / Private Score 比較
 7. 反覆實驗不同特徵對模型分數的影響
 8. 使用 Feature Importance 分析模型重視的欄位
+9. 使用 5-Fold 交叉驗證提升模型穩定性
 
 ---
 
@@ -63,8 +64,9 @@ ROC-AUC
 
 | 套件         |   版本 | 用途                                         | 對應 import                                                |
 | ------------ | -----: | -------------------------------------------- | ---------------------------------------------------------- |
+| numpy        |  2.3.5 | 建立 OOF 預測陣列、5-Fold 測試集平均預測    | `import numpy as np`                                   |
 | pandas       |  2.2.3 | 讀取 CSV、資料整理、建立 submission          | `import pandas as pd`                                    |
-| scikit-learn |  1.8.0 | 切分訓練/驗證集、缺失值補值、AUC 評估        | `train_test_split`, `SimpleImputer`, `roc_auc_score` |
+| scikit-learn |  1.8.0 | 交叉驗證、缺失值補值、AUC 評估              | `StratifiedKFold`, `SimpleImputer`, `roc_auc_score` |
 | xgboost      |  3.1.3 | 建立 XGBoost 二元分類模型                    | `from xgboost import XGBClassifier`                      |
 | matplotlib   | 3.10.8 | 繪製圖表，例如 feature importance 或資料分布 | `import matplotlib.pyplot as plt`                        |
 
@@ -77,6 +79,7 @@ pip install -r requirements.txt
 `requirements.txt` 內容：
 
 ```txt
+numpy==2.3.5
 pandas==2.2.3
 scikit-learn==1.8.0
 xgboost==3.1.3
@@ -86,9 +89,10 @@ matplotlib==3.10.8
 目前主要 import 如下：
 
 ```python
+import numpy as np
 import pandas as pd
 
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import StratifiedKFold
 from sklearn.impute import SimpleImputer
 from sklearn.metrics import roc_auc_score
 
@@ -106,11 +110,13 @@ pip freeze
 或在 Python / Notebook 中執行：
 
 ```python
+import numpy as np
 import pandas as pd
 import sklearn
 import xgboost
 import matplotlib
 
+print("numpy:", np.__version__)
 print("pandas:", pd.__version__)
 print("scikit-learn:", sklearn.__version__)
 print("xgboost:", xgboost.__version__)
@@ -128,14 +134,15 @@ print("matplotlib:", matplotlib.__version__)
 3. 移除訓練集中 `NumberOfDependents` 為空值的資料列
 4. 建立特徵工程：`TotalLate`、`HasLate`
 5. 對 `RevolvingUtilizationOfUnsecuredLines` 進行 `clip()` 極端值處理
-6. 建立訓練資料 `X` 與目標欄位 `y`
-7. 使用 `train_test_split` 切分訓練集與驗證集
-8. 使用 `SimpleImputer(strategy="median")` 對其他缺失值做中位數補值
-9. 使用 `XGBClassifier` 訓練模型
-10. 使用 `roc_auc_score` 評估驗證集 AUC
-11. 使用 Feature Importance 觀察模型重視的欄位
-12. 對 Kaggle 測試集進行預測
-13. 輸出 `submission.csv` 並上傳 Kaggle
+6. 新增收入與負債相關特徵：`MonthlyDebtPayment`、`PerCapitaIncome`
+7. 建立訓練資料 `X` 與目標欄位 `y`
+8. 使用 `StratifiedKFold` 進行 5-Fold 交叉驗證
+9. 每一折內部獨立使用 `SimpleImputer(strategy="median")` 進行中位數補值，避免 Data Leakage
+10. 每一折訓練一個 `XGBClassifier` 模型
+11. 使用 OOF 預測結果計算整體交叉驗證 AUC
+12. 對 Kaggle 測試集進行 5 次預測並取平均
+13. 使用 Feature Importance 觀察模型重視的欄位
+14. 輸出 `submission.csv` 並上傳 Kaggle
 
 ---
 
@@ -346,25 +353,27 @@ df["HasLate"] = (df["TotalLate"] > 0).astype(int)
 
 ---
 
-### 3. 特徵工程實驗結果
+### 3. 特徵工程與驗證方式實驗結果
 
 目前測試過的結果如下：
 
-| 實驗內容                                                                    | Private Score |
-| --------------------------------------------------------------------------- | ------------: |
-| 原始特徵 + TotalLate + HasLate，沒有切片                                    |       0.86805 |
-| TotalLate + HasLate +`RevolvingUtilizationOfUnsecuredLines` clip upper=10 |       0.86808 |
-| TotalLate + HasLate +`RevolvingUtilizationOfUnsecuredLines` clip upper=5  |       0.86811 |
-| TotalLate + HasLate +`RevolvingUtilizationOfUnsecuredLines` clip upper=4  |       0.86814 |
-| TotalLate + HasLate +`RevolvingUtilizationOfUnsecuredLines` clip upper=3  |       0.86814 |
-| TotalLate + HasLate +`RevolvingUtilizationOfUnsecuredLines` clip upper=6  |       0.86814 |
-| TotalLate + HasLate +`RevolvingUtilizationOfUnsecuredLines` clip upper=2  |       0.86814 |
-| TotalLate + HasLate + clip + 收入與負債相關新特徵 | 低於 0.86814，未採用 |
+| 實驗內容 | 驗證方式 | Private Score |
+| -------- | -------- | ------------: |
+| 原始特徵 + TotalLate + HasLate，沒有切片 | 單一 train/valid split | 0.86805 |
+| TotalLate + HasLate + `RevolvingUtilizationOfUnsecuredLines` clip upper=10 | 單一 train/valid split | 0.86808 |
+| TotalLate + HasLate + `RevolvingUtilizationOfUnsecuredLines` clip upper=5 | 單一 train/valid split | 0.86811 |
+| TotalLate + HasLate + `RevolvingUtilizationOfUnsecuredLines` clip upper=4 | 單一 train/valid split | 0.86814 |
+| TotalLate + HasLate + `RevolvingUtilizationOfUnsecuredLines` clip upper=3 | 單一 train/valid split | 0.86814 |
+| TotalLate + HasLate + `RevolvingUtilizationOfUnsecuredLines` clip upper=6 | 單一 train/valid split | 0.86814 |
+| TotalLate + HasLate + `RevolvingUtilizationOfUnsecuredLines` clip upper=2 | 單一 train/valid split | 0.86814 |
+| 原本最佳特徵 + 5-Fold | 5-Fold CV + 平均測試集預測 | 0.86833 |
+| 原本最佳特徵 + `MonthlyDebtPayment` + `PerCapitaIncome` + 5-Fold | 5-Fold CV + 平均測試集預測 | **0.86834** |
 
 目前觀察：
 
 > 對 `RevolvingUtilizationOfUnsecuredLines` 做切片後，Private Score 有小幅提升。
-> 但額外加入收入與負債相關新特徵後，Kaggle 分數反而下降，因此目前不採用這組新特徵。
+> 後續改用 5-Fold 交叉驗證後，分數由原本最佳的 `0.86814` 提升到 `0.86833`。
+> 在 5-Fold 基礎上再加入 `MonthlyDebtPayment` 與 `PerCapitaIncome`，Private Score 小幅提升到 `0.86834`，因此目前將此版本作為新的最佳版本。
 
 ### 4. 特徵工程對 Feature Importance 的影響
 
@@ -389,28 +398,32 @@ df["HasLate"] = (df["TotalLate"] > 0).astype(int)
 
 不過 Feature Importance 只能代表模型使用欄位的相對頻率或貢獻，不能完全代表因果關係。因此本專案仍以 Kaggle Private Score 作為最終採用依據。
 
-### 5. 收入與負債相關特徵實驗：未採用
+### 5. 收入與負債相關特徵實驗：5-Fold 後小幅採用
 
-本次也嘗試建立收入與負債相關的新特徵，例如：
+本次也嘗試建立收入與負債相關的新特徵。早期曾一次加入較多收入與負債特徵，但在單一 train/valid split 版本中，Kaggle Private Score 沒有明顯提升，因此當時暫不採用。
 
-| 新增特徵 | 說明 |
-| -------- | ---- |
-| `MonthlyIncome_log` | 對月收入取 log，降低極端高收入影響 |
-| `DebtRatio_log` | 對負債比取 log，降低極端負債比影響 |
-| `IncomePerDependent` | 平均每位家庭成員可分配收入 |
-| `DebtPerDependent` | 平均每位家庭成員負債壓力 |
-| `EstimatedMonthlyDebt` | 以 `DebtRatio * MonthlyIncome` 粗略估計每月負債 |
-| `DebtToIncomeFeature` | 建立負債與收入的交互比例 |
+後續改成 5-Fold 交叉驗證後，重新保守測試其中兩個較直觀的特徵：
 
-雖然這些特徵在 Feature Importance 圖中有被模型使用，例如 `EstimatedMonthlyDebt`、`DebtToIncomeFeature`、`DebtRatio_log` 等欄位仍有一定重要性，但實際提交 Kaggle 後，Private Score 低於目前最佳的 `0.86814`。
+| 新增特徵 | 建立方式 | 說明 |
+| -------- | -------- | ---- |
+| `MonthlyDebtPayment` | `DebtRatio * MonthlyIncome` | 粗略估計每月負債壓力 |
+| `PerCapitaIncome` | `MonthlyIncome / (NumberOfDependents + 1)` | 估計平均到每位家庭成員後的月收入 |
+
+實驗結果如下：
+
+| 實驗內容 | Private Score |
+| -------- | ------------: |
+| 原本最佳特徵 + 5-Fold | 0.86833 |
+| 原本最佳特徵 + `MonthlyDebtPayment` + `PerCapitaIncome` + 5-Fold | **0.86834** |
 
 因此本專案目前判斷：
 
-> 收入與負債相關新特徵雖然有被模型使用，但沒有帶來更好的 Kaggle 分數，因此最終版本先不採用。
+> `MonthlyDebtPayment` 與 `PerCapitaIncome` 在 5-Fold 版本中帶來非常小幅的提升，因此目前可作為最終版本的一部分。
 
 這次實驗也說明：
 
-> Feature Importance 高不一定代表分數會提升，最終仍要以驗證分數與 Kaggle Private Score 作為判斷依據。
+> 特徵工程是否有效，不能只看單一 train/valid split，也需要搭配更穩定的驗證方式，例如 5-Fold 交叉驗證。  
+> 不過本次提升幅度非常小，代表這兩個特徵的幫助有限，主要提升仍來自 5-Fold 平均預測帶來的穩定性。
 
 ---
 
@@ -467,13 +480,20 @@ Private Score 皆達到：
 4. 建立 `TotalLate`
 5. 建立 `HasLate`
 6. 對 `RevolvingUtilizationOfUnsecuredLines` 做上限切片
-
-另外測試過收入與負債相關的新特徵，但分數反而低於目前最佳結果，因此最終版本暫不採用。
+7. 使用 5-Fold 交叉驗證訓練 5 個模型
+8. 對 Kaggle 測試集做 5 次預測並取平均
+9. 加入 `MonthlyDebtPayment` 與 `PerCapitaIncome` 兩個收入與負債相關特徵
 
 目前最佳 Private Score：
 
 ```python
-0.86814
+0.86834
+```
+
+目前最佳版本：
+
+```text
+XGBoost + TotalLate + HasLate + RevolvingUtilizationOfUnsecuredLines clip + MonthlyDebtPayment + PerCapitaIncome + 5-Fold
 ```
 
 ---
@@ -483,9 +503,10 @@ Private Score 皆達到：
 簡化版流程如下：
 
 ```python
+import numpy as np
 import pandas as pd
 
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import StratifiedKFold
 from sklearn.impute import SimpleImputer
 from sklearn.metrics import roc_auc_score
 from xgboost import XGBClassifier
@@ -508,32 +529,43 @@ test_id = df_test["Unnamed: 0"]
 
 ```python
 df_train = df_train.dropna(subset=["NumberOfDependents"])
+df_train = df_train.dropna(subset=["SeriousDlqin2yrs"])
 ```
 
 ### 4. 建立特徵工程
 
 ```python
-def add_features(df):
+def add_features(df, upper=3):
     df = df.copy()
 
-    df["TotalLate"] = (
-        df["NumberOfTime30-59DaysPastDueNotWorse"] +
-        df["NumberOfTime60-89DaysPastDueNotWorse"] +
-        df["NumberOfTimes90DaysLate"]
+    # RevolvingUtilization 極端值切片
+    df["RevolvingUtilizationOfUnsecuredLines"] = (
+        df["RevolvingUtilizationOfUnsecuredLines"].clip(upper=upper)
     )
 
+    # 逾期總次數
+    late_cols = [
+        "NumberOfTime30-59DaysPastDueNotWorse",
+        "NumberOfTime60-89DaysPastDueNotWorse",
+        "NumberOfTimes90DaysLate"
+    ]
+    df["TotalLate"] = df[late_cols].sum(axis=1)
+
+    # 是否曾經逾期
     df["HasLate"] = (df["TotalLate"] > 0).astype(int)
 
-    df["RevolvingUtilizationOfUnsecuredLines"] = (
-        df["RevolvingUtilizationOfUnsecuredLines"].clip(upper=4)
-    )
+    # 估算每月負債壓力
+    df["MonthlyDebtPayment"] = df["DebtRatio"] * df["MonthlyIncome"]
+
+    # 人均月收入
+    df["PerCapitaIncome"] = df["MonthlyIncome"] / (df["NumberOfDependents"] + 1)
 
     return df
 ```
 
 ```python
-df_train = add_features(df_train)
-df_test = add_features(df_test)
+df_train = add_features(df_train, upper=3)
+df_test = add_features(df_test, upper=3)
 ```
 
 ### 5. 建立 X / y
@@ -545,71 +577,77 @@ y = df_train["SeriousDlqin2yrs"]
 X_kaggle = df_test.drop(columns=["Unnamed: 0", "SeriousDlqin2yrs"])
 ```
 
-### 6. 切分訓練集與驗證集
+### 6. 使用 5-Fold 交叉驗證訓練模型
 
 ```python
-X_train, X_valid, y_train, y_valid = train_test_split(
-    X,
-    y,
-    test_size=0.2,
-    random_state=42,
-    stratify=y
-)
+X_arr = X.values
+y_arr = y.values
+X_kaggle_arr = X_kaggle.values
+
+skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+
+oof_preds = np.zeros(len(X_arr))
+test_preds = np.zeros(len(X_kaggle_arr))
+fold_auc_scores = []
+
+for fold, (train_idx, valid_idx) in enumerate(skf.split(X_arr, y_arr)):
+    X_train_fold = X_arr[train_idx]
+    X_valid_fold = X_arr[valid_idx]
+    y_train_fold = y_arr[train_idx]
+    y_valid_fold = y_arr[valid_idx]
+
+    # 每一折內部獨立補值，避免 Data Leakage
+    imputer = SimpleImputer(strategy="median")
+    X_train_fold = imputer.fit_transform(X_train_fold)
+    X_valid_fold = imputer.transform(X_valid_fold)
+    X_kaggle_fold = imputer.transform(X_kaggle_arr)
+
+    xgb = XGBClassifier(
+        objective="binary:logistic",
+        eval_metric="auc",
+        n_estimators=800,
+        learning_rate=0.03,
+        max_depth=4,
+        min_child_weight=5,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        gamma=0.1,
+        reg_alpha=0.1,
+        reg_lambda=1.0,
+        random_state=42 + fold,
+        n_jobs=-1
+    )
+
+    xgb.fit(X_train_fold, y_train_fold)
+
+    valid_pred = xgb.predict_proba(X_valid_fold)[:, 1]
+    oof_preds[valid_idx] = valid_pred
+
+    fold_auc = roc_auc_score(y_valid_fold, valid_pred)
+    fold_auc_scores.append(fold_auc)
+
+    test_preds += xgb.predict_proba(X_kaggle_fold)[:, 1] / skf.n_splits
+
+print("平均 Fold AUC:", np.mean(fold_auc_scores))
+print("OOF AUC:", roc_auc_score(y_arr, oof_preds))
 ```
 
-### 7. 中位數補值
+### 7. 產生 Kaggle Submission
 
 ```python
-imputer = SimpleImputer(strategy="median")
+submission = pd.DataFrame({
+    "Id": test_id,
+    "Probability": test_preds
+})
 
-X_train = imputer.fit_transform(X_train)
-X_valid = imputer.transform(X_valid)
-X_kaggle = imputer.transform(X_kaggle)
+submission.to_csv("submission.csv", index=False)
 ```
 
-### 8. 訓練 XGBoost
+### 8. 繪製 Feature Importance 圖
+
+若要繪製 Feature Importance，可以另外訓練一個 final model，或使用最後一折的模型觀察大致的重要性。
 
 ```python
-xgb = XGBClassifier(
-    objective="binary:logistic",
-    eval_metric="auc",
-
-    n_estimators=800,
-    learning_rate=0.03,
-
-    max_depth=4,
-    min_child_weight=5,
-
-    subsample=0.8,
-    colsample_bytree=0.8,
-
-    gamma=0.1,
-
-    reg_alpha=0.1,
-    reg_lambda=1.0,
-
-    random_state=42,
-    n_jobs=-1
-)
-
-xgb.fit(X_train, y_train)
-```
-
-### 9. 驗證模型
-
-```python
-valid_pred = xgb.predict_proba(X_valid)[:, 1]
-auc = roc_auc_score(y_valid, valid_pred)
-
-print("Validation AUC:", auc)
-```
-
-### 10. 繪製 Feature Importance 圖
-
-```python
-import pandas as pd
-import matplotlib.pyplot as plt
-
 feature_importance = pd.DataFrame({
     "feature": X.columns,
     "importance": xgb.feature_importances_
@@ -629,19 +667,6 @@ plt.show()
 ```
 
 > 注意：`plt.savefig()` 建議放在 `plt.show()` 前面，避免圖片存成空白。
-
-### 11. 產生 Kaggle Submission
-
-```python
-test_pred = xgb.predict_proba(X_kaggle)[:, 1]
-
-submission = pd.DataFrame({
-    "Id": test_id,
-    "Probability": test_pred
-})
-
-submission.to_csv("submission.csv", index=False)
-```
 
 ---
 
@@ -664,19 +689,27 @@ submission.to_csv("submission.csv", index=False)
 3. 特徵工程需要一個一個測試，不能一次加太多
 4. Kaggle 分數需要反覆提交與比較
 5. Private Score 才比較能看出模型泛化能力
+6. 5-Fold 交叉驗證可以讓模型預測更穩定，減少單一次切分造成的波動
 
 ---
 
 ## 十一、後續可改進方向
 
-目前已嘗試建立收入與負債相關的新特徵，但分數沒有提升，因此暫不採用。
+目前已完成：
+
+1. 使用 XGBoost 作為主要模型
+2. 建立逾期相關特徵 `TotalLate`、`HasLate`
+3. 對 `RevolvingUtilizationOfUnsecuredLines` 做極端值切片
+4. 使用 5-Fold 交叉驗證提升模型穩定性
+5. 新增 `MonthlyDebtPayment` 與 `PerCapitaIncome`，並在 5-Fold 版本中取得小幅提升
 
 之後可以繼續嘗試：
 
-1. 使用交叉驗證讓分數更穩定
-2. 嘗試 LightGBM 或 CatBoost
-3. 比較不同 `clip()` 上限對 Public / Private Score 的影響
-4. 針對高重要性的逾期相關欄位做更細緻的特徵工程
+1. 嘗試 LightGBM 或 CatBoost
+2. 比較不同 `clip()` 上限對 Public / Private Score 的影響
+3. 針對高重要性的逾期相關欄位做更細緻的特徵工程
+4. 嘗試不同 Fold 數量，例如 3-Fold、5-Fold、10-Fold 的差異
+5. 比較單一模型與 5-Fold ensemble 在 Public / Private Score 上的穩定性
 
 ---
 
@@ -685,14 +718,22 @@ submission.to_csv("submission.csv", index=False)
 目前最佳 Kaggle Private Score：
 
 ```python
-0.86814
+0.86834
 ```
 
 目前使用方法：
 
 ```python
-XGBoost + TotalLate + HasLate + RevolvingUtilizationOfUnsecuredLines clip
+XGBoost + TotalLate + HasLate + RevolvingUtilizationOfUnsecuredLines clip + MonthlyDebtPayment + PerCapitaIncome + 5-Fold
 ```
+
+本次分數提升紀錄：
+
+| 版本 | Private Score |
+| ---- | ------------: |
+| 原本最佳特徵 + 單一 train/valid split | 0.86814 |
+| 原本最佳特徵 + 5-Fold | 0.86833 |
+| 原本最佳特徵 + `MonthlyDebtPayment` + `PerCapitaIncome` + 5-Fold | **0.86834** |
 
 ---
 
@@ -713,7 +754,7 @@ images/kaggle_score.png
 目前實驗紀錄最佳 Private Score：
 
 ```text
-0.86814
+0.86834
 ```
 
 ### 2. Feature Importance 特徵重要性圖
@@ -728,7 +769,7 @@ images/feature_importance.png
 
 這張圖用來觀察 XGBoost 模型在訓練後，較重視哪些欄位。透過這張圖可以檢查特徵工程是否有被模型使用，例如 `TotalLate`、`HasLate` 或經過 `clip()` 處理後的欄位是否具有一定的重要性。
 
-本次收入與負債相關特徵雖然也有出現在 Feature Importance 中，但 Kaggle 分數反而下降，因此這組特徵目前只作為實驗紀錄，不放入最終採用版本。
+本次收入與負債相關特徵在單一 train/valid split 版本中沒有明顯提升，但改用 5-Fold 後，`MonthlyDebtPayment` 與 `PerCapitaIncome` 讓 Private Score 從 `0.86833` 小幅提升到 `0.86834`，因此目前納入最終採用版本。
 
 ---
 

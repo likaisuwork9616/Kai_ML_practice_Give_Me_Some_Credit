@@ -888,7 +888,7 @@ images/kaggle_score.png
 images/feature_importance_seed_100.png
 ```
 
-![Feature Importance Random Seed](images/feature_importance_random_seed.png)
+![Feature Importance Random Seed](images/feature_importance_seed_100.png)
 
 這張圖用來觀察 XGBoost 模型在訓練後，較重視哪些欄位。透過這張圖可以檢查特徵工程是否有被模型使用，例如 `TotalLate`、`HasLate` 或經過 `clip()` 處理後的欄位是否具有一定的重要性。
 
@@ -898,7 +898,6 @@ images/feature_importance_seed_100.png
 
 ## 十四、建議專案結構
 
-```text
 give-me-credit-practice/
 │
 ├── README.md
@@ -910,9 +909,7 @@ give-me-credit-practice/
 │
 └── images/
     ├── kaggle_score.png
-    ├── feature_importance.png
     └── feature_importance_random_seed.png
-```
 
 ---
 

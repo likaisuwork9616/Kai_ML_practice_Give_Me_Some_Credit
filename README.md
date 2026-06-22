@@ -502,6 +502,7 @@ df["HasLate"] = (df["TotalLate"] > 0).astype(int)
 | 最佳特徵版本 + 10-Fold                                              |           0.86839 |          |
 | 最佳特徵版本 + 5-Fold + seed ensemble                               |           0.86845 |          |
 | 最佳特徵版本 + 5-Fold + seed=100                                    | **0.86854** | 採用     |
+| 最佳特徵版本 + 5-Fold + seed=100 +`MaxLateLevel`                  |           0.86821 | 不採用   |
 
 因此本專案目前判斷：
 
@@ -511,6 +512,8 @@ df["HasLate"] = (df["TotalLate"] > 0).astype(int)
 
 > 特徵工程是否有效，不能只看單一 train/valid split，也需要搭配更穩定的驗證方式，例如 5-Fold 交叉驗證。
 > 不過本次每個特徵的提升幅度都很小，因此仍需要一個一個測試，避免一次加入太多欄位造成雜訊。
+
+另外，後續也嘗試針對逾期欄位新增 `MaxLateLevel`，用 0、1、2、3 表示最高逾期等級。實驗結果 Private Score 為 `0.86821`，低於目前最佳的 `0.86854`，因此最後仍保留原本較穩定的特徵組合。
 
 ---
 
@@ -811,14 +814,15 @@ plt.show()
 7. 最終採用 `MonthlyIncome_isna` 與 `DebtRatio` clip upper=50
 8. 比較 3-Fold、5-Fold、10-Fold 對 Private Score 的影響
 9. 比較不同 random seed 對 5-Fold 結果的影響，並最終固定使用 `seed=100`
+10. 嘗試針對逾期欄位新增 `MaxLateLevel`，但 Private Score 為 `0.86821`，低於目前最佳分數，因此不採用
 
 之後可以繼續嘗試：
 
 1. 嘗試 LightGBM 或 CatBoost
 2. 比較更多 `clip()` 上限對 Public / Private Score 的影響
-3. 針對高重要性的逾期相關欄位做更細緻的特徵工程
+3. 針對逾期欄位嘗試其他更保守的特徵工程，例如只測單一逾期特徵，避免一次加入太多欄位造成雜訊
 4. 比較 XGBoost 單模型與其他 Boosting 模型 ensemble 的穩定性
-5. 以 `seed=100` 為固定基準，繼續比較更多特徵工程與 clip 上限
+5. 以 `seed=100`、`5-Fold` 與目前最佳特徵為固定基準，繼續比較更多特徵工程與 clip 上限
 
 ---
 
@@ -852,6 +856,7 @@ XGBoost + TotalLate + HasLate + RevolvingUtilizationOfUnsecuredLines clip + Mont
 | 最佳特徵版本 + 10-Fold                                              |           0.86839 |
 | 最佳特徵版本 + 5-Fold + seed ensemble                               |           0.86845 |
 | 最佳特徵版本 + 5-Fold + seed=100                                    | **0.86854** |
+| 最佳特徵版本 + 5-Fold + seed=100 +`MaxLateLevel`                  |           0.86821 |
 
 ---
 
@@ -880,7 +885,7 @@ images/kaggle_score.png
 固定 `seed=100` 後重新產生的 Feature Importance 圖片位置：
 
 ```text
-images/feature_importance_random_seed_100.png
+images/feature_importance_seed_100.png
 ```
 
 ![Feature Importance Random Seed](images/feature_importance_random_seed.png)
@@ -913,4 +918,8 @@ give-me-credit-practice/
 
 ## 十五、專案狀態
 
-目前本專案仍在練習與實驗中，會持續記錄不同資料處理方式、特徵工程與模型調整對 Kaggle 分數的影響。
+目前本專案先測試到此版本，最終保留原本表現較穩定的特徵工程組合，並固定使用 `seed=100` 與 `5-Fold` 作為主要設定。
+
+這次作業讓我充分學習到機器學習中的多個基礎知識，包括資料前處理、缺失值處理、特徵工程、模型選擇、交叉驗證、random seed 對結果的影響，以及如何用 Kaggle Public / Private Score 觀察模型泛化能力。
+
+整體來說，這次練習讓我理解到，模型分數的提升不是只靠單純調整參數，而是需要從資料處理、特徵設計、驗證方式與模型穩定性等面向一起思考。

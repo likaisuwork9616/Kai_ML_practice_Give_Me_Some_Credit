@@ -32,6 +32,7 @@ ROC-AUC
 8. 使用 Feature Importance 分析模型重視的欄位
 9. 使用 5-Fold 交叉驗證提升模型穩定性
 10. 比較 3-Fold、5-Fold、10-Fold 對 Kaggle 分數的影響
+11. 比較不同 random seed 對 5-Fold 結果的影響
 
 ---
 
@@ -63,13 +64,13 @@ ROC-AUC
 
 ### 主要套件版本
 
-| 套件         |   版本 | 用途                                         | 對應 import                                                |
-| ------------ | -----: | -------------------------------------------- | ---------------------------------------------------------- |
-| numpy        |  2.3.5 | 建立 OOF 預測陣列、5-Fold 測試集平均預測    | `import numpy as np`                                   |
-| pandas       |  2.2.3 | 讀取 CSV、資料整理、建立 submission          | `import pandas as pd`                                    |
-| scikit-learn |  1.8.0 | 交叉驗證、缺失值補值、AUC 評估              | `StratifiedKFold`, `SimpleImputer`, `roc_auc_score` |
-| xgboost      |  3.1.3 | 建立 XGBoost 二元分類模型                    | `from xgboost import XGBClassifier`                      |
-| matplotlib   | 3.10.8 | 繪製圖表，例如 feature importance 或資料分布 | `import matplotlib.pyplot as plt`                        |
+| 套件         |   版本 | 用途                                         | 對應 import                                               |
+| ------------ | -----: | -------------------------------------------- | --------------------------------------------------------- |
+| numpy        |  2.3.5 | 建立 OOF 預測陣列、5-Fold 測試集平均預測     | `import numpy as np`                                    |
+| pandas       |  2.2.3 | 讀取 CSV、資料整理、建立 submission          | `import pandas as pd`                                   |
+| scikit-learn |  1.8.0 | 交叉驗證、缺失值補值、AUC 評估               | `StratifiedKFold`, `SimpleImputer`, `roc_auc_score` |
+| xgboost      |  3.1.3 | 建立 XGBoost 二元分類模型                    | `from xgboost import XGBClassifier`                     |
+| matplotlib   | 3.10.8 | 繪製圖表，例如 feature importance 或資料分布 | `import matplotlib.pyplot as plt`                       |
 
 安裝方式：
 
@@ -139,13 +140,14 @@ print("matplotlib:", matplotlib.__version__)
 7. 新增 `MonthlyIncome_isna`，記錄月收入是否原本為缺失值
 8. 對 `DebtRatio` 進行 `clip()` 極端值處理，最終採用 `upper=50`
 9. 建立訓練資料 `X` 與目標欄位 `y`
-10. 使用 `StratifiedKFold` 進行交叉驗證，主要採用 5-Fold，並額外比較 3-Fold、10-Fold
+10. 使用 `StratifiedKFold` 進行交叉驗證，主要採用 5-Fold，並額外比較 3-Fold、10-Fold 與不同 random seed
 11. 每一折內部獨立使用 `SimpleImputer(strategy="median")` 進行中位數補值，避免 Data Leakage
 12. 每一折訓練一個 `XGBClassifier` 模型
 13. 使用 OOF 預測結果計算整體交叉驗證 AUC
 14. 對 Kaggle 測試集進行多折預測並取平均，降低單一模型預測波動
-15. 使用 Feature Importance 觀察模型重視的欄位
-16. 輸出 `submission.csv` 並上傳 Kaggle
+15. 最終固定使用 `seed=100` 作為後續實驗基準
+16. 使用 Feature Importance 觀察模型重視的欄位
+17. 輸出 `submission.csv` 並上傳 Kaggle
 
 ---
 
@@ -284,7 +286,7 @@ xgb = XGBClassifier(
     reg_alpha=0.1,
     reg_lambda=1.0,
 
-    random_state=42,
+    random_state=100,
     n_jobs=-1
 )
 ```
@@ -360,28 +362,28 @@ df["HasLate"] = (df["TotalLate"] > 0).astype(int)
 
 目前測試過的結果如下：
 
-| 實驗內容 | 驗證方式 | Private Score |
-| -------- | -------- | ------------: |
-| 原始特徵 + TotalLate + HasLate，沒有切片 | 單一 train/valid split | 0.86805 |
-| TotalLate + HasLate + `RevolvingUtilizationOfUnsecuredLines` clip upper=10 | 單一 train/valid split | 0.86808 |
-| TotalLate + HasLate + `RevolvingUtilizationOfUnsecuredLines` clip upper=5 | 單一 train/valid split | 0.86811 |
-| TotalLate + HasLate + `RevolvingUtilizationOfUnsecuredLines` clip upper=4 | 單一 train/valid split | 0.86814 |
-| TotalLate + HasLate + `RevolvingUtilizationOfUnsecuredLines` clip upper=3 | 單一 train/valid split | 0.86814 |
-| TotalLate + HasLate + `RevolvingUtilizationOfUnsecuredLines` clip upper=6 | 單一 train/valid split | 0.86814 |
-| TotalLate + HasLate + `RevolvingUtilizationOfUnsecuredLines` clip upper=2 | 單一 train/valid split | 0.86814 |
-| 原本最佳特徵 + 5-Fold | 5-Fold CV + 平均測試集預測 | 0.86833 |
-| 原本最佳特徵 + `MonthlyDebtPayment` + `PerCapitaIncome` + 5-Fold | 5-Fold CV + 平均測試集預測 | 0.86834 |
-| 上一版最佳 + `MonthlyIncome_isna` | 5-Fold CV + 平均測試集預測 | 0.86837 |
-| 上一版最佳 + `AgeBin` | 5-Fold CV + 平均測試集預測 | 0.86835 |
-| 上一版最佳 + `LateSeverity` | 5-Fold CV + 平均測試集預測 | 0.86815 |
-| 上一版最佳 + `DebtRatio` clip upper=1 | 5-Fold CV + 平均測試集預測 | 0.86831 |
-| 上一版最佳 + `DebtRatio` clip upper=2 | 5-Fold CV + 平均測試集預測 | 0.86842 |
-| 上一版最佳 + `DebtRatio` clip upper=5 | 5-Fold CV + 平均測試集預測 | 0.86841 |
-| 上一版最佳 + `DebtRatio` clip upper=10 | 5-Fold CV + 平均測試集預測 | 0.86838 |
-| 上一版最佳 + `DebtRatio` clip upper=50 | 5-Fold CV + 平均測試集預測 | **0.86843** |
-| 最佳特徵版本 + 3-Fold | 3-Fold CV + 平均測試集預測 | 0.86838 |
-| 最佳特徵版本 + 5-Fold | 5-Fold CV + 平均測試集預測 | 0.86839 |
-| 最佳特徵版本 + 10-Fold | 10-Fold CV + 平均測試集預測 | 0.86839 |
+| 實驗內容                                                                    | 驗證方式                    |     Private Score |
+| --------------------------------------------------------------------------- | --------------------------- | ----------------: |
+| 原始特徵 + TotalLate + HasLate，沒有切片                                    | 單一 train/valid split      |           0.86805 |
+| TotalLate + HasLate +`RevolvingUtilizationOfUnsecuredLines` clip upper=10 | 單一 train/valid split      |           0.86808 |
+| TotalLate + HasLate +`RevolvingUtilizationOfUnsecuredLines` clip upper=5  | 單一 train/valid split      |           0.86811 |
+| TotalLate + HasLate +`RevolvingUtilizationOfUnsecuredLines` clip upper=4  | 單一 train/valid split      |           0.86814 |
+| TotalLate + HasLate +`RevolvingUtilizationOfUnsecuredLines` clip upper=3  | 單一 train/valid split      |           0.86814 |
+| TotalLate + HasLate +`RevolvingUtilizationOfUnsecuredLines` clip upper=6  | 單一 train/valid split      |           0.86814 |
+| TotalLate + HasLate +`RevolvingUtilizationOfUnsecuredLines` clip upper=2  | 單一 train/valid split      |           0.86814 |
+| 原本最佳特徵 + 5-Fold                                                       | 5-Fold CV + 平均測試集預測  |           0.86833 |
+| 原本最佳特徵 +`MonthlyDebtPayment` + `PerCapitaIncome` + 5-Fold         | 5-Fold CV + 平均測試集預測  |           0.86834 |
+| 上一版最佳 +`MonthlyIncome_isna`                                          | 5-Fold CV + 平均測試集預測  |           0.86837 |
+| 上一版最佳 +`AgeBin`                                                      | 5-Fold CV + 平均測試集預測  |           0.86835 |
+| 上一版最佳 +`LateSeverity`                                                | 5-Fold CV + 平均測試集預測  |           0.86815 |
+| 上一版最佳 +`DebtRatio` clip upper=1                                      | 5-Fold CV + 平均測試集預測  |           0.86831 |
+| 上一版最佳 +`DebtRatio` clip upper=2                                      | 5-Fold CV + 平均測試集預測  |           0.86842 |
+| 上一版最佳 +`DebtRatio` clip upper=5                                      | 5-Fold CV + 平均測試集預測  |           0.86841 |
+| 上一版最佳 +`DebtRatio` clip upper=10                                     | 5-Fold CV + 平均測試集預測  |           0.86838 |
+| 上一版最佳 +`DebtRatio` clip upper=50                                     | 5-Fold CV + 平均測試集預測  | **0.86843** |
+| 最佳特徵版本 + 3-Fold                                                       | 3-Fold CV + 平均測試集預測  |           0.86838 |
+| 最佳特徵版本 + 5-Fold                                                       | 5-Fold CV + 平均測試集預測  |           0.86839 |
+| 最佳特徵版本 + 10-Fold                                                      | 10-Fold CV + 平均測試集預測 |           0.86839 |
 
 目前觀察：
 
@@ -395,14 +397,14 @@ df["HasLate"] = (df["TotalLate"] > 0).astype(int)
 
 本次測試結果如下：
 
-| Fold 數 | Private Score | 觀察 |
-| -------: | ------------: | ---- |
-| 3-Fold | 0.86838 | 訓練速度較快，但分數略低 |
-| 5-Fold | 0.86839 | 與 10-Fold 接近，訓練時間較合理 |
-| 10-Fold | 0.86839 | 分數沒有明顯高於 5-Fold，但訓練時間較長 |
+|         Fold 數 |     Private Score | 觀察                                           |
+| --------------: | ----------------: | ---------------------------------------------- |
+|          3-Fold |           0.86838 | 訓練速度較快，但分數略低                       |
+|          5-Fold |           0.86839 | 與 10-Fold 接近，訓練時間較合理                |
+|         10-Fold |           0.86839 | 分數沒有明顯高於 5-Fold，但訓練時間較長        |
 | 5-Fold 最佳紀錄 | **0.86843** | 目前歷史最佳 Private Score，仍來自 5-Fold 版本 |
 
-本次結果顯示，增加 Fold 數量不一定會讓 Kaggle Private Score 明顯提升。  
+本次結果顯示，增加 Fold 數量不一定會讓 Kaggle Private Score 明顯提升。
 3-Fold、5-Fold、10-Fold 的分數差距都非常小，代表目前模型已經相對穩定。
 
 雖然重新執行 5-Fold 時得到 `0.86839`，但先前相同 Fold 方向曾取得 `0.86843` 的最佳紀錄。這種差異可能來自模型訓練過程、隨機種子、提交檔案版本或特徵版本的微小差異。由於差距只有 `0.00004`，因此不視為明顯退步。
@@ -411,7 +413,37 @@ df["HasLate"] = (df["TotalLate"] > 0).astype(int)
 
 ---
 
-### 5. 特徵工程對 Feature Importance 的影響
+### 5. 不同 random seed 對 5-Fold 結果的影響
+
+在確認 5-Fold 是目前較適合的驗證方式後，進一步固定以下條件，只改變 `random_state`：
+
+- 模型：XGBoost
+- Fold 數量：5-Fold
+- 特徵工程：沿用目前最佳版本
+- `RevolvingUtilizationOfUnsecuredLines` clip：沿用目前設定
+- `DebtRatio` clip：`upper=50`
+
+本次測試結果如下：
+
+|          Seed |     Private Score | 觀察                                  |
+| ------------: | ----------------: | ------------------------------------- |
+|             0 |           0.86838 | 分數穩定                              |
+|             7 |           0.86838 | 分數穩定                              |
+|            21 |           0.86835 | 略低                                  |
+|            42 |           0.86839 | 分數穩定                              |
+|           100 | **0.86854** | 本次最高分                            |
+|          2024 |           0.86839 | 分數穩定                              |
+|          3407 |           0.86836 | 略低                                  |
+| seed ensemble |           0.86845 | 多 seed 平均後較穩，但未超過 seed=100 |
+
+本次結果顯示，不同 random seed 會對 Kaggle Private Score 造成小幅影響。
+其中 `seed=100` 取得目前最高 Private Score：`0.86854`，因此後續實驗固定使用 `seed=100` 作為主要基準。
+
+雖然 `seed ensemble` 的 Private Score 為 `0.86845`，高於多數單一 seed，但沒有超過最佳的 `seed=100`。這表示多 seed 平均通常可以提升穩定性，但不一定會取得最高分。
+
+---
+
+### 6. 特徵工程對 Feature Importance 的影響
 
 在 XGBoost 這類樹模型中，Feature Importance 可以用來觀察模型在分裂節點時，較常使用哪些欄位來降低預測錯誤。
 
@@ -422,10 +454,10 @@ df["HasLate"] = (df["TotalLate"] > 0).astype(int)
 | `TotalLate`                                 | 將 30-59 天、60-89 天、90 天以上逾期次數加總 | 讓模型直接看到整體逾期程度     |
 | `HasLate`                                   | 判斷 `TotalLate > 0`                       | 讓模型快速判斷客戶是否曾經逾期 |
 | `RevolvingUtilizationOfUnsecuredLines` clip | 將極端值限制在指定上限                       | 降低極端值對模型切分的干擾     |
-| `MonthlyDebtPayment`                       | `DebtRatio * MonthlyIncome`                 | 估算每月負債壓力               |
-| `PerCapitaIncome`                          | `MonthlyIncome / (NumberOfDependents + 1)`  | 估算家庭平均收入壓力           |
-| `MonthlyIncome_isna`                       | 判斷 `MonthlyIncome` 是否缺失                | 保留收入缺失本身的訊號         |
-| `DebtRatio` clip                           | 將 `DebtRatio` 極端值限制在 upper=50         | 降低負債比極端值對模型干擾     |
+| `MonthlyDebtPayment`                        | `DebtRatio * MonthlyIncome`                | 估算每月負債壓力               |
+| `PerCapitaIncome`                           | `MonthlyIncome / (NumberOfDependents + 1)` | 估算家庭平均收入壓力           |
+| `MonthlyIncome_isna`                        | 判斷 `MonthlyIncome` 是否缺失              | 保留收入缺失本身的訊號         |
+| `DebtRatio` clip                            | 將 `DebtRatio` 極端值限制在 upper=50       | 降低負債比極端值對模型干擾     |
 
 這些特徵工程的目的不是單純增加欄位數量，而是把原本分散或極端的資訊整理成更容易被模型使用的形式。
 
@@ -438,36 +470,38 @@ df["HasLate"] = (df["TotalLate"] > 0).astype(int)
 
 不過 Feature Importance 只能代表模型使用欄位的相對頻率或貢獻，不能完全代表因果關係。因此本專案仍以 Kaggle Private Score 作為最終採用依據。
 
-### 6. 收入、負債與缺失值特徵實驗：5-Fold 後重新測試
+### 7. 收入、負債與缺失值特徵實驗：5-Fold 後重新測試
 
 本次也嘗試建立收入與負債相關的新特徵。早期曾一次加入較多收入與負債特徵，但在單一 train/valid split 版本中，Kaggle Private Score 沒有明顯提升，因此當時暫不採用。
 
 後續改成 5-Fold 交叉驗證後，重新保守測試其中幾個較直觀的特徵：
 
-| 新增特徵 | 建立方式 | 說明 |
-| -------- | -------- | ---- |
-| `MonthlyDebtPayment` | `DebtRatio * MonthlyIncome` | 粗略估計每月負債壓力 |
-| `PerCapitaIncome` | `MonthlyIncome / (NumberOfDependents + 1)` | 估計平均到每位家庭成員後的月收入 |
-| `MonthlyIncome_isna` | `MonthlyIncome.isna()` | 記錄月收入是否原本為缺失值 |
-| `DebtRatio` clip | `DebtRatio.clip(upper=50)` | 降低負債比極端值影響 |
+| 新增特徵               | 建立方式                                     | 說明                             |
+| ---------------------- | -------------------------------------------- | -------------------------------- |
+| `MonthlyDebtPayment` | `DebtRatio * MonthlyIncome`                | 粗略估計每月負債壓力             |
+| `PerCapitaIncome`    | `MonthlyIncome / (NumberOfDependents + 1)` | 估計平均到每位家庭成員後的月收入 |
+| `MonthlyIncome_isna` | `MonthlyIncome.isna()`                     | 記錄月收入是否原本為缺失值       |
+| `DebtRatio` clip     | `DebtRatio.clip(upper=50)`                 | 降低負債比極端值影響             |
 
 實驗結果如下：
 
-| 實驗內容 | Private Score | 是否採用 |
-| -------- | ------------: | -------- |
-| 原本最佳特徵 + 5-Fold | 0.86833 | 參考 |
-| 原本最佳特徵 + `MonthlyDebtPayment` + `PerCapitaIncome` + 5-Fold | 0.86834 | 採用 |
-| 上一版最佳 + `MonthlyIncome_isna` | 0.86837 | 採用 |
-| 上一版最佳 + `AgeBin` | 0.86835 | 不採用 |
-| 上一版最佳 + `LateSeverity` | 0.86815 | 不採用 |
-| 上一版最佳 + `DebtRatio` clip upper=1 | 0.86831 | 不採用 |
-| 上一版最佳 + `DebtRatio` clip upper=2 | 0.86842 | 可參考 |
-| 上一版最佳 + `DebtRatio` clip upper=5 | 0.86841 | 可參考 |
-| 上一版最佳 + `DebtRatio` clip upper=10 | 0.86838 | 不採用 |
-| 上一版最佳 + `DebtRatio` clip upper=50 | **0.86843** |
-| 最佳特徵版本 + 3-Fold | 0.86838 |
-| 最佳特徵版本 + 5-Fold 重新測試 | 0.86839 |
-| 最佳特徵版本 + 10-Fold | 0.86839 | 採用 |
+| 實驗內容                                                            |     Private Score | 是否採用 |
+| ------------------------------------------------------------------- | ----------------: | -------- |
+| 原本最佳特徵 + 5-Fold                                               |           0.86833 | 參考     |
+| 原本最佳特徵 +`MonthlyDebtPayment` + `PerCapitaIncome` + 5-Fold |           0.86834 | 採用     |
+| 上一版最佳 +`MonthlyIncome_isna`                                  |           0.86837 | 採用     |
+| 上一版最佳 +`AgeBin`                                              |           0.86835 | 不採用   |
+| 上一版最佳 +`LateSeverity`                                        |           0.86815 | 不採用   |
+| 上一版最佳 +`DebtRatio` clip upper=1                              |           0.86831 | 不採用   |
+| 上一版最佳 +`DebtRatio` clip upper=2                              |           0.86842 | 可參考   |
+| 上一版最佳 +`DebtRatio` clip upper=5                              |           0.86841 | 可參考   |
+| 上一版最佳 +`DebtRatio` clip upper=10                             |           0.86838 | 不採用   |
+| 上一版最佳 +`DebtRatio` clip upper=50                             | **0.86843** |          |
+| 最佳特徵版本 + 3-Fold                                               |           0.86838 |          |
+| 最佳特徵版本 + 5-Fold 重新測試                                      |           0.86839 |          |
+| 最佳特徵版本 + 10-Fold                                              |           0.86839 |          |
+| 最佳特徵版本 + 5-Fold + seed ensemble                               |           0.86845 |          |
+| 最佳特徵版本 + 5-Fold + seed=100                                    | **0.86854** | 採用     |
 
 因此本專案目前判斷：
 
@@ -475,7 +509,7 @@ df["HasLate"] = (df["TotalLate"] > 0).astype(int)
 
 這次實驗也說明：
 
-> 特徵工程是否有效，不能只看單一 train/valid split，也需要搭配更穩定的驗證方式，例如 5-Fold 交叉驗證。  
+> 特徵工程是否有效，不能只看單一 train/valid split，也需要搭配更穩定的驗證方式，例如 5-Fold 交叉驗證。
 > 不過本次每個特徵的提升幅度都很小，因此仍需要一個一個測試，避免一次加入太多欄位造成雜訊。
 
 ---
@@ -542,13 +576,13 @@ Private Score 皆達到：
 目前最佳 Private Score：
 
 ```python
-0.86843
+0.86854
 ```
 
 目前最佳版本：
 
 ```text
-XGBoost + TotalLate + HasLate + RevolvingUtilizationOfUnsecuredLines clip + MonthlyDebtPayment + PerCapitaIncome + MonthlyIncome_isna + DebtRatio clip upper=50 + 5-Fold
+XGBoost + TotalLate + HasLate + RevolvingUtilizationOfUnsecuredLines clip + MonthlyDebtPayment + PerCapitaIncome + MonthlyIncome_isna + DebtRatio clip upper=50 + 5-Fold + seed=100
 ```
 
 ---
@@ -646,7 +680,14 @@ X_arr = X.values
 y_arr = y.values
 X_kaggle_arr = X_kaggle.values
 
-skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+SEED = 100
+N_SPLITS = 5
+
+skf = StratifiedKFold(
+    n_splits=N_SPLITS,
+    shuffle=True,
+    random_state=SEED
+)
 
 oof_preds = np.zeros(len(X_arr))
 test_preds = np.zeros(len(X_kaggle_arr))
@@ -676,7 +717,7 @@ for fold, (train_idx, valid_idx) in enumerate(skf.split(X_arr, y_arr)):
         gamma=0.1,
         reg_alpha=0.1,
         reg_lambda=1.0,
-        random_state=42 + fold,
+        random_state=SEED + fold,
         n_jobs=-1
     )
 
@@ -688,7 +729,7 @@ for fold, (train_idx, valid_idx) in enumerate(skf.split(X_arr, y_arr)):
     fold_auc = roc_auc_score(y_valid_fold, valid_pred)
     fold_auc_scores.append(fold_auc)
 
-    test_preds += xgb.predict_proba(X_kaggle_fold)[:, 1] / skf.n_splits
+    test_preds += xgb.predict_proba(X_kaggle_fold)[:, 1] / N_SPLITS
 
 print("平均 Fold AUC:", np.mean(fold_auc_scores))
 print("OOF AUC:", roc_auc_score(y_arr, oof_preds))
@@ -702,7 +743,7 @@ submission = pd.DataFrame({
     "Probability": test_preds
 })
 
-submission.to_csv("submission.csv", index=False)
+submission.to_csv("submission_seed_100.csv", index=False)
 ```
 
 ### 8. 繪製 Feature Importance 圖
@@ -724,7 +765,7 @@ plt.xlabel("Importance")
 plt.ylabel("Feature")
 plt.title("Top 20 Feature Importance")
 plt.tight_layout()
-plt.savefig("images/feature_importance.png", dpi=300, bbox_inches="tight")
+plt.savefig("images/feature_importance_random_seed.png", dpi=300, bbox_inches="tight")
 plt.show()
 ```
 
@@ -753,6 +794,7 @@ plt.show()
 5. Private Score 才比較能看出模型泛化能力
 6. 5-Fold 交叉驗證可以讓模型預測更穩定，減少單一次切分造成的波動
 7. Fold 數量增加不一定會讓分數明顯提升，仍需要同時考量訓練時間與實際 Kaggle 分數
+8. random seed 不會改變資料本身，但會影響資料切分與模型抽樣，因此需要測試穩定性
 
 ---
 
@@ -768,14 +810,15 @@ plt.show()
 6. 重新測試 `MonthlyIncome_isna`、`AgeBin`、`LateSeverity` 與 `DebtRatio` clip
 7. 最終採用 `MonthlyIncome_isna` 與 `DebtRatio` clip upper=50
 8. 比較 3-Fold、5-Fold、10-Fold 對 Private Score 的影響
+9. 比較不同 random seed 對 5-Fold 結果的影響，並最終固定使用 `seed=100`
 
 之後可以繼續嘗試：
 
 1. 嘗試 LightGBM 或 CatBoost
 2. 比較更多 `clip()` 上限對 Public / Private Score 的影響
 3. 針對高重要性的逾期相關欄位做更細緻的特徵工程
-4. 比較不同 random seed 對 5-Fold 結果的影響
-5. 比較 XGBoost 單模型與其他 Boosting 模型 ensemble 的穩定性
+4. 比較 XGBoost 單模型與其他 Boosting 模型 ensemble 的穩定性
+5. 以 `seed=100` 為固定基準，繼續比較更多特徵工程與 clip 上限
 
 ---
 
@@ -784,29 +827,31 @@ plt.show()
 目前最佳 Kaggle Private Score：
 
 ```python
-0.86843
+0.86854
 ```
 
 目前使用方法：
 
 ```python
-XGBoost + TotalLate + HasLate + RevolvingUtilizationOfUnsecuredLines clip + MonthlyDebtPayment + PerCapitaIncome + MonthlyIncome_isna + DebtRatio clip upper=50 + 5-Fold
+XGBoost + TotalLate + HasLate + RevolvingUtilizationOfUnsecuredLines clip + MonthlyDebtPayment + PerCapitaIncome + MonthlyIncome_isna + DebtRatio clip upper=50 + 5-Fold + seed=100
 ```
 
 本次分數提升紀錄：
 
-| 版本 | Private Score |
-| ---- | ------------: |
-| 原本最佳特徵 + 單一 train/valid split | 0.86814 |
-| 原本最佳特徵 + 5-Fold | 0.86833 |
-| 原本最佳特徵 + `MonthlyDebtPayment` + `PerCapitaIncome` + 5-Fold | 0.86834 |
-| 上一版最佳 + `MonthlyIncome_isna` | 0.86837 |
-| 上一版最佳 + `DebtRatio` clip upper=2 | 0.86842 |
-| 上一版最佳 + `DebtRatio` clip upper=5 | 0.86841 |
-| 上一版最佳 + `DebtRatio` clip upper=50 | **0.86843** |
-| 最佳特徵版本 + 3-Fold | 0.86838 |
-| 最佳特徵版本 + 5-Fold 重新測試 | 0.86839 |
-| 最佳特徵版本 + 10-Fold | 0.86839 |
+| 版本                                                                |     Private Score |
+| ------------------------------------------------------------------- | ----------------: |
+| 原本最佳特徵 + 單一 train/valid split                               |           0.86814 |
+| 原本最佳特徵 + 5-Fold                                               |           0.86833 |
+| 原本最佳特徵 +`MonthlyDebtPayment` + `PerCapitaIncome` + 5-Fold |           0.86834 |
+| 上一版最佳 +`MonthlyIncome_isna`                                  |           0.86837 |
+| 上一版最佳 +`DebtRatio` clip upper=2                              |           0.86842 |
+| 上一版最佳 +`DebtRatio` clip upper=5                              |           0.86841 |
+| 上一版最佳 +`DebtRatio` clip upper=50                             | **0.86843** |
+| 最佳特徵版本 + 3-Fold                                               |           0.86838 |
+| 最佳特徵版本 + 5-Fold 重新測試                                      |           0.86839 |
+| 最佳特徵版本 + 10-Fold                                              |           0.86839 |
+| 最佳特徵版本 + 5-Fold + seed ensemble                               |           0.86845 |
+| 最佳特徵版本 + 5-Fold + seed=100                                    | **0.86854** |
 
 ---
 
@@ -827,22 +872,22 @@ images/kaggle_score.png
 目前實驗紀錄最佳 Private Score：
 
 ```text
-0.86843
+0.86854
 ```
 
 ### 2. Feature Importance 特徵重要性圖
 
-檔案位置：
+固定 `seed=100` 後重新產生的 Feature Importance 圖片位置：
 
 ```text
-images/feature_importance.png
+images/feature_importance_random_seed_100.png
 ```
 
-![Feature Importance](images/feature_importance.png)
+![Feature Importance Random Seed](images/feature_importance_random_seed.png)
 
 這張圖用來觀察 XGBoost 模型在訓練後，較重視哪些欄位。透過這張圖可以檢查特徵工程是否有被模型使用，例如 `TotalLate`、`HasLate` 或經過 `clip()` 處理後的欄位是否具有一定的重要性。
 
-本次收入與負債相關特徵在單一 train/valid split 版本中沒有明顯提升，但改用 5-Fold 後，`MonthlyDebtPayment`、`PerCapitaIncome`、`MonthlyIncome_isna` 與 `DebtRatio` clip upper=50 讓 Private Score 逐步提升到 `0.86843`，因此目前納入最終採用版本。
+本次收入與負債相關特徵在單一 train/valid split 版本中沒有明顯提升，但改用 5-Fold 後，`MonthlyDebtPayment`、`PerCapitaIncome`、`MonthlyIncome_isna` 與 `DebtRatio` clip upper=50 讓 Private Score 逐步提升。後續比較不同 random seed 後，`seed=100` 取得目前最佳 Private Score：`0.86854`，因此目前將 `seed=100` 納入後續實驗基準。
 
 ---
 
@@ -860,7 +905,8 @@ give-me-credit-practice/
 │
 └── images/
     ├── kaggle_score.png
-    └── feature_importance.png
+    ├── feature_importance.png
+    └── feature_importance_random_seed.png
 ```
 
 ---

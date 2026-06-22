@@ -898,6 +898,7 @@ images/feature_importance_seed_100.png
 
 ## 十四、建議專案結構
 
+```text
 give-me-credit-practice/
 │
 ├── README.md
@@ -910,6 +911,7 @@ give-me-credit-practice/
 └── images/
     ├── kaggle_score.png
     └── feature_importance_random_seed.png
+```
 
 ---
 
